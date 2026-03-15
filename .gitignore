@@ -1,0 +1,5 @@
+.bundle/
+sessions/*/
+reports/*.md
+*.lock
+import/*
