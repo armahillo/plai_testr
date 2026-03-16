@@ -13,6 +13,7 @@ module PlaiTester
   RULES_DIR    = File.join(ROOT, 'rules')
 end
 
+require_relative 'plai_tester/protocol'
 require_relative 'plai_tester/agents/ollama_client'
 require_relative 'plai_tester/agents/player_agent'
 require_relative 'plai_tester/agents/referee_agent'

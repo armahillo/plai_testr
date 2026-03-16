@@ -51,6 +51,83 @@ when 'list'
     sessions.each { |s| puts "%-20s  %-28s  %-12s  %s" % s.values_at('session_id', 'game', 'status', 'saved_at') }
   end
 
+when 'init'
+  output = ARGV[1] or abort "Usage: plai_tester init <rules_file>"
+  abort "File already exists: #{output}" if File.exist?(output)
+
+  game_name = File.basename(output, '.*').gsub(/[_\-]/, ' ').split.map(&:capitalize).join(' ')
+
+  stub = {
+    "game" => {
+      "name"         => game_name,
+      "version"      => "0.1.0",
+      "description"  => "A brief description of #{game_name}.",
+      "player_count" => { "min" => 2, "max" => 4, "default" => 2 }
+    },
+    "components" => [
+      {
+        "name"        => "Example component",
+        "type"        => "card_deck",
+        "count"       => 52,
+        "description" => "Describe this component."
+      }
+    ],
+    "initial_state" => {
+      "flags"  => {},
+      "custom" => {}
+    },
+    "setup" => [
+      { "step" => 1, "description" => "Describe the first setup step." },
+      { "step" => 2, "description" => "Describe the second setup step." }
+    ],
+    "turn_structure" => [
+      { "name" => "Action phase", "description" => "The active player takes one or more actions, then declares end_turn." }
+    ],
+    "actions" => [
+      {
+        "type"        => "example_action",
+        "description" => "Describe what this action does.",
+        "conditions"  => ["Describe when this action is legal."],
+        "effects"     => ["Describe what changes in game state."],
+        "parameters"  => ["example_param"]
+      },
+      {
+        "type"               => "example_attack",
+        "description"        => "An attack that gives opponents a chance to react.",
+        "conditions"         => ["Describe when this attack is legal."],
+        "effects"            => ["Describe the effect if not blocked."],
+        "parameters"         => ["target"],
+        "triggers_reactions" => true
+      },
+      {
+        "type"        => "example_block",
+        "description" => "A reaction that negates an incoming attack.",
+        "conditions"  => ["You must have a block card in hand.", "An attack must have been declared against you."],
+        "effects"     => ["You are unaffected by the current attack."],
+        "parameters"  => ["card_id"],
+        "reaction"    => true
+      }
+    ],
+    "win_conditions" => [
+      {
+        "type"        => "score_threshold",
+        "description" => "First player to reach 10 points wins.",
+        "threshold"   => 10
+      }
+    ],
+    "edge_cases" => [
+      {
+        "situation" => "Describe an ambiguous situation.",
+        "ruling"    => "Describe the correct resolution.",
+        "notes"     => "Optional context or reasoning."
+      }
+    ]
+  }
+
+  File.write(output, JSON.pretty_generate(stub))
+  puts "Created #{output}"
+  puts "Edit the file to define your rules, then run: plai_tester start #{output}"
+
 when 'report'
   session_id = ARGV[1] or abort "Usage: plai_tester report <session_id>"
 
@@ -73,6 +150,7 @@ else
     PlaiTester — Automated Board Game Playtesting
 
     Usage:
+      plai_tester init <rules_file>      Create a stub rules file to fill in
       plai_tester start <rules_file>     Start a new session
       plai_tester resume <session_id>    Resume an interrupted session
       plai_tester list                   List all sessions

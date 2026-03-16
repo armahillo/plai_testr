@@ -35,6 +35,10 @@ module PlaiTester
       end
 
       # state_changes keys: "flags" (object), "custom" (object), "player_states" (object keyed by player name)
+      #
+      # Arrays in "custom" are replaced wholesale — referees must return the complete new
+      # array state, not incremental mutations. This is correct because the referee always
+      # receives full game state before computing state_changes.
       def apply_changes(state_changes)
         return if state_changes.nil? || state_changes.empty?
 

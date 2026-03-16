@@ -76,11 +76,13 @@
       "items": {
         "required": ["type", "description"],
         "properties": {
-          "type":        { "type": "string",  "description": "Snake_case identifier used in agent JSON responses" },
-          "description": { "type": "string",  "description": "What this action does, in plain language" },
-          "conditions":  { "type": "array",   "items": { "type": "string" }, "description": "Preconditions that must be true for this action to be legal" },
-          "effects":     { "type": "array",   "items": { "type": "string" }, "description": "What changes in game state when this action is taken" },
-          "parameters":  { "type": "array",   "items": { "type": "string" }, "description": "Named inputs required (e.g. [\"card_id\", \"target_player\"])" }
+          "type":               { "type": "string",  "description": "Snake_case identifier used in agent JSON responses" },
+          "description":        { "type": "string",  "description": "What this action does, in plain language" },
+          "conditions":         { "type": "array",   "items": { "type": "string" }, "description": "Preconditions that must be true for this action to be legal" },
+          "effects":            { "type": "array",   "items": { "type": "string" }, "description": "What changes in game state when this action is taken" },
+          "parameters":         { "type": "array",   "items": { "type": "string" }, "description": "Named inputs required (e.g. [\"card_id\", \"target_player\"])" },
+          "triggers_reactions": { "type": "boolean", "default": false, "description": "If true, all other players are queried for a reaction after this action resolves. Used for attacks and similar interrupts." },
+          "reaction":           { "type": "boolean", "default": false, "description": "If true, this action is only available as a reaction to a triggers_reactions action, never during the active player's normal turn." }
         }
       }
     },

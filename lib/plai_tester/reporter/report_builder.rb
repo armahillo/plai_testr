@@ -61,8 +61,9 @@ module PlaiTester
         lines = ["## Player Performance"]
 
         @game_state.players.each do |player|
-          turns  = @turn_log.select { |t| t['player'] == player }
-          counts = turns.group_by { |t| t['action'] }.transform_values(&:count)
+          turns       = @turn_log.select { |t| t['player'] == player }
+          all_actions = turns.flat_map { |t| t['actions'].reject { |a| a['action'] == 'end_turn' } }
+          counts      = all_actions.group_by { |a| a['action'] }.transform_values(&:count)
 
           lines << "\n### #{player}"
           lines << "- Turns taken: #{turns.length}"
@@ -81,8 +82,18 @@ module PlaiTester
         lines = ["## Turn-by-Turn Log"]
 
         @turn_log.each do |turn|
-          lines << "\n**Turn #{turn['turn']} — #{turn['player']}**: `#{turn['action']}` #{format_params(turn['parameters'])}"
-          lines << "> #{turn['reasoning']}" if turn['reasoning']
+          lines << "\n**Turn #{turn['turn']} — #{turn['player']}**"
+
+          turn['actions'].each do |action|
+            next if action['action'] == 'end_turn'
+
+            lines << "- `#{action['action']}` #{format_params(action['parameters'])}"
+            lines << "  > #{action['reasoning']}" if action['reasoning']
+
+            action['reactions'].each do |reaction|
+              lines << "  - _#{reaction['player']} reacted_: `#{reaction['action']}` #{format_params(reaction['parameters'])}"
+            end
+          end
         end
 
         lines.join("\n")

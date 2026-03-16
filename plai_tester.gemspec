@@ -6,6 +6,7 @@ Gem::Specification.new do |spec|
   spec.authors  = ['Aaron H']
   spec.summary  = 'Automated board game playtesting using local LLM agents'
   spec.license  = 'MIT'
+  spec.homepage = ''  # TODO: add before publishing to RubyGems
 
   spec.description = <<~DESC.strip
     PlaiTester mediates sessions of board games between LLM agents running locally
