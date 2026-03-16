@@ -1,4 +1,4 @@
-module Testr
+module PlaiTester
   module Random
     class Engine
       def roll(sides:, count: 1)

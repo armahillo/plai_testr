@@ -1,4 +1,4 @@
-module Testr
+module PlaiTester
   module Agents
     class PlayerAgent
       def initialize(name:, model:, client:, rules:)

@@ -4,7 +4,10 @@
       "Bash(chmod:*)",
       "Bash(touch:*)",
       "Bash(bundle exec:*)",
-      "Bash(bundle install:*)"
+      "Bash(bundle install:*)",
+      "Bash(sed:*)",
+      "Bash(ruby:*)",
+      "Bash(gem build:*)"
     ]
   }
 }

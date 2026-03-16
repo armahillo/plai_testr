@@ -1,10 +1,10 @@
 $LOAD_PATH.unshift File.expand_path('lib', __dir__)
-require 'testr'
+require 'plai_tester'
 
-PLAYER_MODEL  = ENV.fetch('TESTR_PLAYER_MODEL',  'llama3.2:3b')
-REFEREE_MODEL = ENV.fetch('TESTR_REFEREE_MODEL', 'qwen3:8b')
-OLLAMA_HOST   = ENV.fetch('TESTR_OLLAMA_HOST',   'localhost')
-OLLAMA_PORT   = ENV.fetch('TESTR_OLLAMA_PORT',   '11434').to_i
+PLAYER_MODEL  = ENV.fetch('PLAITESTER_PLAYER_MODEL',  'llama3.2:3b')
+REFEREE_MODEL = ENV.fetch('PLAITESTER_REFEREE_MODEL', 'qwen3:8b')
+OLLAMA_HOST   = ENV.fetch('PLAITESTER_OLLAMA_HOST',   'localhost')
+OLLAMA_PORT   = ENV.fetch('PLAITESTER_OLLAMA_PORT',   '11434').to_i
 
 require 'rspec/core/rake_task'
 RSpec::Core::RakeTask.new(:spec)
@@ -49,7 +49,7 @@ namespace :check do
 
     # --- Inference smoke test ---
     if errors.empty?
-      client = Testr::Agents::OllamaClient.new(host: OLLAMA_HOST, port: OLLAMA_PORT)
+      client = PlaiTester::Agents::OllamaClient.new(host: OLLAMA_HOST, port: OLLAMA_PORT)
 
       [
         { label: "Player model (#{PLAYER_MODEL})",   model: PLAYER_MODEL },
@@ -76,7 +76,7 @@ namespace :check do
     # --- Summary ---
     puts
     if errors.empty?
-      puts "All checks passed. TESTR is ready."
+      puts "All checks passed. PlaiTester is ready."
     else
       puts "#{errors.length} issue(s) found:"
       errors.each { |e| puts "  - #{e}" }

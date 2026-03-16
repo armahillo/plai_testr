@@ -1,8 +1,9 @@
 require 'fileutils'
 require 'tmpdir'
 
-$LOAD_PATH.unshift File.expand_path('../lib', __dir__)
-require 'testr'
+$LOAD_PATH.unshift File.expand_path('../lib',         __dir__)
+
+require 'plai_tester'
 
 RSpec.configure do |config|
   config.expect_with :rspec do |expectations|

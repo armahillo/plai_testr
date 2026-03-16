@@ -1,9 +1,9 @@
-module Testr
+module PlaiTester
   module Session
     class Manager
       attr_reader :session_id
 
-      def initialize(session_id: nil, base_dir: Testr::SESSIONS_DIR)
+      def initialize(session_id: nil, base_dir: PlaiTester::SESSIONS_DIR)
         @session_id = session_id || SecureRandom.hex(8)
         @base_dir   = base_dir
         FileUtils.mkdir_p(session_dir)
@@ -17,7 +17,7 @@ module Testr
           'game'          => metadata['game'],
           'rules_file'    => metadata['rules_file'],
           'rules_version' => metadata['rules_version'],
-          'game_state'    => game_state.to_h,
+          'game_state'    => game_state.serialize,
           'turn_log'      => turn_log
         }
 
@@ -46,7 +46,7 @@ module Testr
         File.join(session_dir, 'transcript.jsonl')
       end
 
-      def self.list(base_dir: Testr::SESSIONS_DIR)
+      def self.list(base_dir: PlaiTester::SESSIONS_DIR)
         return [] unless Dir.exist?(base_dir)
 
         Dir.glob(File.join(base_dir, '*', 'state.json')).filter_map do |path|

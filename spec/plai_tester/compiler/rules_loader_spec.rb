@@ -1,7 +1,7 @@
 require 'spec_helper'
 
-RSpec.describe Testr::Compiler::RulesLoader do
-  let(:example_path) { File.join(Testr::RULES_DIR, 'example.json') }
+RSpec.describe PlaiTester::Compiler::RulesLoader do
+  let(:example_path) { File.join(PlaiTester::RULES_DIR, 'example.json') }
 
   describe '.load' do
     it 'loads the example rules file without error' do
@@ -38,7 +38,7 @@ RSpec.describe Testr::Compiler::RulesLoader do
 
     it 'returns an error for each missing required key' do
       errors = described_class.validate({})
-      expect(errors.length).to eq(Testr::Compiler::RulesLoader::REQUIRED_KEYS.length)
+      expect(errors.length).to eq(PlaiTester::Compiler::RulesLoader::REQUIRED_KEYS.length)
     end
   end
 end

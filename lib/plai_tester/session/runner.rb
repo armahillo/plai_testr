@@ -1,4 +1,4 @@
-module Testr
+module PlaiTester
   module Session
     class StalledError < StandardError
       attr_reader :context
@@ -12,39 +12,43 @@ module Testr
     class Runner
       MAX_RETRIES = 3
 
-      def initialize(rules:, players:, models:, ollama_host: 'localhost', ollama_port: 11434, session_id: nil, checkpoint: nil)
-        @rules   = rules
-        @manager = Manager.new(session_id: session_id)
+      def initialize(rules:, players:, models:, ollama_host: 'localhost', ollama_port: 11434, session_id: nil, checkpoint: nil, game_state_class: State::GameState)
+        @rules            = rules
+        @game_state_class = game_state_class
+        @manager          = Manager.new(session_id: session_id)
 
         client    = Agents::OllamaClient.new(host: ollama_host, port: ollama_port)
         @referee  = Agents::RefereeAgent.new(model: models[:referee], client: client, rules: rules)
         @players  = build_player_agents(players, models[:player], client)
+        @random   = Random::Engine.new
         @running  = true
+        @resuming = !checkpoint.nil?
 
         if checkpoint
-          @game_state = State::GameState.from_h(checkpoint['game_state'])
+          @game_state = @game_state_class.from_h(checkpoint['game_state'])
           @turn_log   = checkpoint['turn_log']
         else
-          @game_state = State::GameState.new(players: players, current_state: rules.fetch('initial_state', {}))
+          @game_state = @game_state_class.new(players: players, current_state: rules.fetch('initial_state', {}))
           @turn_log   = []
         end
 
         trap('SIGINT') { interrupt! }
       end
 
-      def self.resume(session_id:, models:, ollama_host: 'localhost', ollama_port: 11434)
+      def self.resume(session_id:, models:, ollama_host: 'localhost', ollama_port: 11434, game_state_class: State::GameState)
         manager    = Manager.new(session_id: session_id)
         checkpoint = manager.load_checkpoint
         rules      = JSON.parse(File.read(checkpoint['rules_file']))
 
         new(
-          rules:       rules,
-          players:     checkpoint.dig('game_state', 'players'),
-          models:      models,
-          ollama_host: ollama_host,
-          ollama_port: ollama_port,
-          session_id:  session_id,
-          checkpoint:  checkpoint
+          rules:            rules,
+          players:          checkpoint.dig('game_state', 'players'),
+          models:           models,
+          ollama_host:      ollama_host,
+          ollama_port:      ollama_port,
+          session_id:       session_id,
+          checkpoint:       checkpoint,
+          game_state_class: game_state_class
         )
       end
 
@@ -53,6 +57,8 @@ module Testr
         puts "Game:    #{@rules.dig('game', 'name')} v#{@rules.dig('game', 'version')}"
         puts "Players: #{@game_state.players.join(', ')}"
         puts "Press Ctrl+C to save state and exit.\n\n"
+
+        setup unless @resuming
 
         until game_over? || !@running
           play_turn
@@ -70,6 +76,33 @@ module Testr
       end
 
       private
+
+      def resolve_random_if_needed(validation, action)
+        return validation unless validation['random_ops']&.any?
+
+        random_results = execute_random_ops(validation['random_ops'])
+        puts "  Random: #{random_results}"
+        @referee.resolve_random(
+          random_results: random_results,
+          game_state:     @game_state.serialize,
+          action:         action
+        )
+      end
+
+      def execute_random_ops(ops)
+        ops.each_with_object({}) do |op, results|
+          results[op['for']] = case op['op']
+          when 'roll'      then @random.roll(sides: op.fetch('sides', 6), count: op.fetch('count', 1))
+          when 'coin_flip' then @random.coin_flip
+          end
+        end
+      end
+
+      # Override in game-specific subclasses to perform pre-game setup using @random
+      # (e.g. shuffle and deal the deck, determine first player).
+      # Not called when resuming from a checkpoint — state is already populated.
+      def setup
+      end
 
       def build_player_agents(players, model, client)
         players.each_with_object({}) do |name, h|
@@ -95,7 +128,7 @@ module Testr
             'action'      => action['action'],
             'parameters'  => action['parameters'],
             'reasoning'   => action['reasoning'],
-            'state_after' => @game_state.to_h
+            'state_after' => @game_state.serialize
           }
 
           @turn_log << entry
@@ -109,12 +142,15 @@ module Testr
         attempts = []
 
         MAX_RETRIES.times do |i|
-          action     = agent.take_turn(@game_state.to_h, available_actions, @turn_log)
-          validation = @referee.validate(player: player_name, action: action, game_state: @game_state.to_h)
+          action     = agent.take_turn(@game_state.serialize_for(player_name), available_actions, @turn_log)
+          validation = @referee.validate(player: player_name, action: action, game_state: @game_state.serialize)
 
           puts "  Action: #{action['action']} #{action['parameters']}"
 
-          return [action, validation] if validation['valid']
+          if validation['valid']
+            validation = resolve_random_if_needed(validation, action)
+            return [action, validation]
+          end
 
           puts "  Invalid (attempt #{i + 1}/#{MAX_RETRIES}): #{validation['reason']}"
           attempts << { attempt: i + 1, action: action, rejection: validation['reason'] }
@@ -123,7 +159,7 @@ module Testr
         raise StalledError.new({
           turn:       @game_state.turn + 1,
           player:     player_name,
-          game_state: @game_state.to_h,
+          game_state: @game_state.serialize,
           attempts:   attempts
         })
       end
@@ -155,7 +191,7 @@ module Testr
       end
 
       def generate_report(stall_context: nil)
-        FileUtils.mkdir_p(Testr::REPORTS_DIR)
+        FileUtils.mkdir_p(PlaiTester::REPORTS_DIR)
         Reporter::ReportBuilder.new(
           session_id:   @manager.session_id,
           rules:        @rules,
@@ -168,7 +204,7 @@ module Testr
       def interrupt!
         puts "\n\nInterrupted — saving state..."
         save_checkpoint('interrupted')
-        puts "Saved. Resume with: testr resume #{@manager.session_id}"
+        puts "Saved. Resume with: plai_tester resume #{@manager.session_id}"
         @running = false
       end
     end

@@ -1,9 +1,9 @@
 require 'spec_helper'
 
-RSpec.describe Testr::Session::Manager do
+RSpec.describe PlaiTester::Session::Manager do
   let(:players)    { ['Player 1', 'Player 2'] }
-  let(:game_state) { Testr::State::GameState.new(players: players) }
-  let(:tmp_dir)    { Dir.mktmpdir('testr_spec_') }
+  let(:game_state) { PlaiTester::State::GameState.new(players: players) }
+  let(:tmp_dir)    { Dir.mktmpdir('plai_tester_spec_') }
 
   after { FileUtils.rm_rf(tmp_dir) }
 
@@ -16,13 +16,13 @@ RSpec.describe Testr::Session::Manager do
   describe '#save_checkpoint and #load_checkpoint' do
     it 'round-trips game state through JSON' do
       game_state.advance_turn
-      game_state.apply_changes('scores' => { 'Player 1' => 3 })
+      game_state.apply_changes('player_states' => { 'Player 1' => { 'score' => 3 } })
 
       manager.save_checkpoint(game_state, [], { 'status' => 'in_progress', 'game' => 'Test' })
       checkpoint = manager.load_checkpoint
 
       expect(checkpoint['game_state']['turn']).to eq(game_state.turn)
-      expect(checkpoint['game_state']['scores']['Player 1']).to eq(3)
+      expect(checkpoint['game_state']['player_states']['Player 1']['score']).to eq(3)
       expect(checkpoint['status']).to eq('in_progress')
     end
   end

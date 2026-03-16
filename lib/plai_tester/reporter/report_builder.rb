@@ -1,4 +1,4 @@
-module Testr
+module PlaiTester
   module Reporter
     class ReportBuilder
       def initialize(session_id:, rules:, game_state:, turn_log:, stall_context: nil)
@@ -13,7 +13,7 @@ module Testr
         sections = [header, summary, player_performance, turn_log_section, observations]
         sections << stall_section if @stall_context
         report = sections.join("\n\n---\n\n")
-        path   = File.join(Testr::REPORTS_DIR, "#{@session_id}.md")
+        path   = File.join(PlaiTester::REPORTS_DIR, "#{@session_id}.md")
         File.write(path, report)
         path
       end

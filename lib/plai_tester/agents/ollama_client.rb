@@ -1,4 +1,4 @@
-module Testr
+module PlaiTester
   module Agents
     class OllamaClient
       DEFAULT_HOST = 'localhost'

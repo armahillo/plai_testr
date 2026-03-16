@@ -1,7 +1,7 @@
-module Testr
+module PlaiTester
   module Compiler
     class RulesLoader
-      SCHEMA_PATH    = File.join(Testr::RULES_DIR, 'schema.json')
+      SCHEMA_PATH    = File.join(PlaiTester::RULES_DIR, 'schema.json')
       REQUIRED_KEYS  = %w[game components setup turn_structure actions win_conditions].freeze
 
       def self.load(path)
