@@ -1,7 +1,7 @@
 module PlaiTester
   module State
     class GameState < Base
-      attr_reader :turn, :current_player_index, :players, :flags
+      attr_reader :turn, :current_player_index, :players, :flags, :custom
 
       def initialize(players:, current_state: {})
         @players              = players
@@ -57,8 +57,8 @@ module PlaiTester
           'current_player_index' => @current_player_index,
           'current_player'       => current_player,
           'players'              => @players,
-          'flags'                => @flags,
-          'custom'               => @custom,
+          'flags'                => @flags.dup,
+          'custom'               => @custom.dup,
           'player_states'        => @player_states.transform_values(&:serialize)
         }
       end

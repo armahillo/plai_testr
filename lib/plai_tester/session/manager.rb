@@ -3,8 +3,8 @@ module PlaiTester
     class Manager
       attr_reader :session_id
 
-      def initialize(session_id: nil, base_dir: PlaiTester::SESSIONS_DIR)
-        @session_id = session_id || SecureRandom.hex(8)
+      def initialize(session_id: nil, base_dir: PlaiTester.sessions_dir)
+        @session_id = (session_id || Time.now.to_i).to_s
         @base_dir   = base_dir
         FileUtils.mkdir_p(session_dir)
       end
@@ -46,7 +46,7 @@ module PlaiTester
         File.join(session_dir, 'transcript.jsonl')
       end
 
-      def self.list(base_dir: PlaiTester::SESSIONS_DIR)
+      def self.list(base_dir: PlaiTester.sessions_dir)
         return [] unless Dir.exist?(base_dir)
 
         Dir.glob(File.join(base_dir, '*', 'state.json')).filter_map do |path|

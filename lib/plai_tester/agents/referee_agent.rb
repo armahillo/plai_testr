@@ -1,17 +1,16 @@
 module PlaiTester
   module Agents
     class RefereeAgent
+      MAX_PARSE_RETRIES = 2
+
       def initialize(model:, client:, rules:)
         @model  = model
         @client = client
         @rules  = rules
       end
 
-      # Returns a hash with keys: "valid" (bool), "reason" (string), "state_changes" (hash),
-      # and optionally "random_ops" (array) when the resolution requires randomness.
-      #
-      # context is a Protocol::Context hash describing why validation is being requested
-      # (turn_action vs. reaction), so the referee can apply the correct rules.
+      # Returns {"valid": bool, "reason": string}.
+      # State changes are the runner's responsibility; the referee only rules on legality.
       def validate(player:, action:, game_state:, context: Protocol::Context.turn_action)
         messages = [
           { role: 'system', content: system_prompt },
@@ -19,8 +18,7 @@ module PlaiTester
         ]
 
         # Low temperature: we want consistent, rule-bound rulings
-        response = @client.chat(model: @model, messages: messages, temperature: 0.1)
-        parse_response(response.dig('message', 'content'))
+        chat_with_json_retry(messages, temperature: 0.1)
       end
 
       # Called by Runner#setup before the game loop begins.
@@ -32,20 +30,7 @@ module PlaiTester
           { role: 'user',   content: setup_prompt(setup_steps, components, players) }
         ]
 
-        response = @client.chat(model: @model, messages: messages, temperature: 0.7)
-        parse_response(response.dig('message', 'content'))
-      end
-
-      # Called by Runner after executing random_ops returned by validate.
-      # Returns a hash with keys: "valid" (bool), "reason" (string), "state_changes" (hash).
-      def resolve_random(random_results:, game_state:, action:)
-        messages = [
-          { role: 'system', content: system_prompt },
-          { role: 'user',   content: resolve_random_prompt(random_results, action, game_state) }
-        ]
-
-        response = @client.chat(model: @model, messages: messages, temperature: 0.1)
-        parse_response(response.dig('message', 'content'))
+        chat_with_json_retry(messages, temperature: 0.7)
       end
 
       private
@@ -57,25 +42,14 @@ module PlaiTester
           COMPLETE RULES:
           #{JSON.pretty_generate(@rules)}
 
-          Your role is to:
-          1. Determine whether a proposed action is legal given the current game state and rules.
-          2. If valid, calculate the resulting state changes.
-          3. If invalid, explain why clearly so the player can try again.
+          Your role is to determine whether a proposed action is legal given the current game
+          state and rules. You do NOT compute state changes — the game engine handles that.
+
+          If the action is valid, say so and briefly explain why.
+          If the action is invalid, explain clearly so the player can correct their next attempt.
 
           You MUST respond with valid JSON only — no prose, no markdown fences:
-          {"valid":true,"reason":"<explanation>","state_changes":{},"random_ops":[]}
-
-          state_changes keys: "flags" (object), "custom" (object), "player_states" (object keyed by player name)
-
-          random_ops is optional. Include it when resolving the action requires a random value
-          (e.g. a die roll to break a tie). When random_ops is present, leave state_changes empty —
-          you will be called again with the results to produce the final state_changes.
-
-          Supported random_ops:
-            {"op":"roll","sides":<integer>,"count":<integer>,"for":"<label>"}
-            {"op":"coin_flip","for":"<label>"}
-
-          The "for" label will be the key used to return each result to you.
+          {"valid":true,"reason":"<explanation>"}
         PROMPT
       end
 
@@ -90,15 +64,15 @@ module PlaiTester
 
         <<~PROMPT
           CURRENT GAME STATE:
-          #{JSON.pretty_generate(game_state)}
+          #{JSON.pretty_generate(compact_game_state(game_state))}
 
           #{context_line}
 
           PROPOSED ACTION by #{player}:
           #{JSON.pretty_generate(action)}
 
-          Is this action valid? If so, what are the state changes?
-          Respond with JSON only.
+          Is this action legal given the current game state and rules?
+          Respond with JSON only: {"valid":true,"reason":"<explanation>"}
         PROMPT
       end
 
@@ -124,24 +98,61 @@ module PlaiTester
         PROMPT
       end
 
-      def resolve_random_prompt(random_results, action, game_state)
-        <<~PROMPT
-          CURRENT GAME STATE:
-          #{JSON.pretty_generate(game_state)}
+      # Sends messages to the referee model (thinking disabled) and retries up to
+      # MAX_PARSE_RETRIES times if the model doesn't return parseable JSON.
+      def chat_with_json_retry(messages, temperature:)
+        working = messages.dup
 
-          ACTION being resolved:
-          #{JSON.pretty_generate(action)}
+        (MAX_PARSE_RETRIES + 1).times do |i|
+          response = @client.chat(model: @model, messages: working, temperature: temperature, think: false, num_predict: -1, num_ctx: 32768)
+          content  = response.dig('message', 'content')
+          begin
+            return parse_response(content)
+          rescue RuntimeError, JSON::ParserError => e
+            raise e if i == MAX_PARSE_RETRIES
 
-          RANDOM RESULTS:
-          #{JSON.pretty_generate(random_results)}
+            excerpt = content.length > 500 ? "#{content[0, 300]}...[truncated]" : content
+            working << { role: 'assistant', content: excerpt }
 
-          The action was valid. Using these random results, what are the final state changes?
-          Respond with JSON only: {"valid":true,"reason":"<explanation>","state_changes":{}}
-        PROMPT
+            # Distinguish truncation (long content that cut off mid-JSON) from malformed output.
+            # Truncated responses need a brevity nudge; malformed ones need a format reminder.
+            retry_msg = if e.is_a?(JSON::ParserError) && content.length > 400
+                          'Your response was cut off before the JSON was complete. Respond with minimal JSON — use compact single-line values and omit optional fields like random_ops.'
+                        else
+                          'Your response was not valid JSON. Respond with a raw JSON object only — no prose, no markdown, no code fences.'
+                        end
+            working << { role: 'user', content: retry_msg }
+          end
+        end
+      end
+
+      # Strips verbose card fields (condition, effect) from game state before sending
+      # to the referee. The referee already has full card text in its system prompt via
+      # the rules JSON; duplicating it in every game state inflates the context window.
+      def compact_game_state(obj)
+        case obj
+        when Array then obj.map { |v| compact_game_state(v) }
+        when Hash
+          if obj.key?('condition') || obj.key?('effect')
+            obj.slice('name', 'element')
+          else
+            obj.transform_values { |v| compact_game_state(v) }
+          end
+        else obj
+        end
       end
 
       def parse_response(content)
-        json_str = content.match(/\{.*\}/m)&.to_s
+        # Strip qwen3-style thinking blocks before attempting extraction
+        cleaned = content.gsub(/<think>.*?<\/think>/m, '').strip
+
+        # Try markdown code fence (```json ... ``` or ``` ... ```)
+        if (fenced = cleaned.match(/```(?:json)?\s*(\{.*?\})\s*```/m))
+          return JSON.parse(fenced[1])
+        end
+
+        # Fall back to first top-level {...} block
+        json_str = cleaned.match(/\{.*\}/m)&.to_s
         raise "No JSON found in referee response: #{content.inspect}" unless json_str
 
         JSON.parse(json_str)

@@ -1,6 +1,8 @@
 module PlaiTester
   module Agents
     class PlayerAgent
+      MAX_PARSE_RETRIES = 2
+
       def initialize(name:, model:, client:, rules:)
         @name   = name
         @model  = model
@@ -13,9 +15,7 @@ module PlaiTester
           { role: 'system', content: system_prompt },
           { role: 'user',   content: turn_prompt(game_state, available_actions, history) }
         ]
-
-        response = @client.chat(model: @model, messages: messages)
-        parse_response(response.dig('message', 'content'))
+        chat_with_json_retry(messages)
       end
 
       # Called when another player has taken an action that may trigger a reaction.
@@ -25,15 +25,13 @@ module PlaiTester
           { role: 'system', content: system_prompt },
           { role: 'user',   content: reaction_prompt(acting_player, triggering_action, game_state, available_reactions) }
         ]
-
-        response = @client.chat(model: @model, messages: messages)
-        parse_response(response.dig('message', 'content'))
+        chat_with_json_retry(messages)
       end
 
       private
 
       def system_prompt
-        action_list = @rules['actions'].map { |a| "- #{a['type']}: #{a['description']}" }.join("\n")
+        action_list = @rules['actions'].map { |a| format_action_summary(a) }.join("\n")
         phase_list  = @rules['turn_structure'].map.with_index(1) { |p, i| "#{i}. #{p['name']}: #{p['description']}" }.join("\n")
         win_list    = @rules['win_conditions'].map { |w| "- #{w['description']}" }.join("\n")
 
@@ -67,7 +65,7 @@ module PlaiTester
           #{JSON.pretty_generate(game_state)}
 
           YOUR AVAILABLE ACTIONS THIS TURN:
-          #{available_actions.map { |a| "- #{a}" }.join("\n")}
+          #{format_available_actions(available_actions)}
 
           Declare "end_turn" when you have no more actions to take this turn.
 
@@ -98,11 +96,71 @@ module PlaiTester
         PROMPT
       end
 
-      def parse_response(content)
-        json_str = content.match(/\{.*\}/m)&.to_s
-        raise "No JSON found in player response: #{content.inspect}" unless json_str
+      def format_action_summary(action)
+        parts = ["- #{action['type']}"]
+        parts << "(parameters: #{action['parameters'].join(', ')})" if action['parameters']&.any?
+        parts << "— #{action['description']}" if action['description']
+        parts.join(' ')
+      end
 
-        JSON.parse(json_str)
+      def format_available_actions(available_actions)
+        available_actions.map do |type|
+          rule  = @rules['actions']&.find { |a| a['type'] == type }
+          params = rule&.fetch('parameters', []) || []
+          params.any? ? "- #{type} (required params: #{params.join(', ')})" : "- #{type}"
+        end.join("\n")
+      end
+
+      def chat_with_json_retry(messages)
+        working = messages.dup
+
+        (MAX_PARSE_RETRIES + 1).times do |i|
+          response = @client.chat(model: @model, messages: working, num_predict: -1)
+          content  = response.dig('message', 'content')
+          begin
+            return parse_response(content)
+          rescue RuntimeError, JSON::ParserError => e
+            raise e if i == MAX_PARSE_RETRIES
+
+            excerpt = content.length > 500 ? "#{content[0, 300]}...[truncated]" : content
+            working << { role: 'assistant', content: excerpt }
+            working << { role: 'user', content: 'Your response was not valid JSON. Respond with a raw JSON object only — no prose, no markdown, no code fences.' }
+          end
+        end
+      end
+
+      def parse_response(content)
+        cleaned = content.gsub(/<think>.*?<\/think>/m, '').strip
+
+        if (fenced = cleaned.match(/```(?:json)?\s*(\{.*?\})\s*```/m))
+          return normalize_action(JSON.parse(fenced[1]))
+        end
+
+        # Scan line-by-line and return the first line that parses as a complete JSON object.
+        # This handles models that output multiple JSON objects or trailing prose after the action.
+        cleaned.each_line do |line|
+          stripped = line.strip
+          next unless stripped.start_with?('{')
+          begin
+            return normalize_action(JSON.parse(stripped))
+          rescue JSON::ParserError
+            next
+          end
+        end
+
+        raise "No JSON found in player response: #{content.inspect}"
+      end
+
+      # LLMs sometimes return "params", "required_params", or nest parameters directly
+      # on the action object. Normalize everything to the canonical "parameters" key.
+      def normalize_action(parsed)
+        unless parsed.key?('parameters')
+          params = parsed.delete('params') ||
+                   parsed.delete('required_params') ||
+                   parsed.slice('stack_id', 'chosen_card_name', 'card_id', 'card_ids', 'stance_arrangement')
+          parsed['parameters'] = params.is_a?(Hash) ? params : {}
+        end
+        parsed
       end
     end
   end

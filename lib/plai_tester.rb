@@ -7,10 +7,21 @@ require 'time'
 require 'uri'
 
 module PlaiTester
-  ROOT        = File.expand_path('../..', __FILE__)
-  SESSIONS_DIR = File.join(ROOT, 'sessions')
-  REPORTS_DIR  = File.join(ROOT, 'reports')
-  RULES_DIR    = File.join(ROOT, 'rules')
+  class << self
+    attr_writer :sessions_dir, :reports_dir, :rules_dir
+
+    def sessions_dir
+      @sessions_dir || File.join(Dir.pwd, 'sessions')
+    end
+
+    def reports_dir
+      @reports_dir || File.join(Dir.pwd, 'reports')
+    end
+
+    def rules_dir
+      @rules_dir || File.join(Dir.pwd, 'rules')
+    end
+  end
 end
 
 require_relative 'plai_tester/protocol'

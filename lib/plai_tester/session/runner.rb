@@ -17,7 +17,7 @@ module PlaiTester
         @game_state_class = game_state_class
         @manager          = Manager.new(session_id: session_id)
 
-        client    = Agents::OllamaClient.new(host: ollama_host, port: ollama_port)
+        client    = Agents::OllamaClient.new(host: ollama_host, port: ollama_port, think_log: File.join(@manager.session_dir, 'think.log'))
         @referee  = Agents::RefereeAgent.new(model: models[:referee], client: client, rules: rules)
         @players  = build_player_agents(players, models[:player], client)
         @random   = Random::Engine.new
@@ -77,25 +77,30 @@ module PlaiTester
 
       private
 
-      def resolve_random_if_needed(validation, action)
-        return validation unless validation['random_ops']&.any?
-
-        random_results = execute_random_ops(validation['random_ops'])
-        puts "  Random: #{random_results}"
-        @referee.resolve_random(
-          random_results: random_results,
-          game_state:     @game_state.serialize,
-          action:         action
-        )
+      # Apply the effects of a validated action to game state.
+      # Override in game-specific subclasses — the base runner does not know how to
+      # compute state changes; that logic lives with the game rules.
+      def apply_action_effects(_player_name, action)
+        raise NotImplementedError, "#{self.class} must implement #apply_action_effects (tried to apply '#{action['action']}')"
       end
 
-      def execute_random_ops(ops)
-        ops.each_with_object({}) do |op, results|
-          results[op['for']] = case op['op']
-          when 'roll'      then @random.roll(sides: op.fetch('sides', 6), count: op.fetch('count', 1))
-          when 'coin_flip' then @random.coin_flip
-          end
-        end
+      # Return true for actions that should end the active player's turn immediately
+      # without waiting for an explicit end_turn. Override in game-specific subclasses.
+      def ends_turn_immediately?(_action)
+        false
+      end
+
+      # Return false to suppress end_turn from the action list for mandatory-action turns
+      # (e.g. training phase where every player must take exactly one action).
+      def end_turn_allowed?(_player_name)
+        true
+      end
+
+      # Return false to skip referee validation for an action and let the Ruby runner
+      # handle all legality checks itself. Use for deterministic actions where the referee
+      # adds no value and is likely to hallucinate.
+      def validate_action?(_action)
+        true
       end
 
       # Asks the referee to execute the rules' setup steps and applies the resulting state.
@@ -103,15 +108,17 @@ module PlaiTester
       # Override in game-specific subclasses to inject true randomness (e.g. pre-shuffle
       # via @random and pass the result to the referee via a custom setup_prompt).
       def setup
-        return if @rules.fetch('setup', []).empty?
+        steps = @rules.fetch('setup', [])
+        return if steps.empty?
 
-        puts "  Setting up..."
+        puts "  Setting up — #{steps.length} step#{steps.length == 1 ? '' : 's'} (referee computing initial state, this may take a moment)..."
         initial = @referee.compute_initial_state(
-          setup_steps: @rules.fetch('setup', []),
+          setup_steps: steps,
           components:  @rules.fetch('components', []),
           players:     @game_state.players
         )
         @game_state.apply_changes(initial)
+        puts "  Setup complete."
       end
 
       def build_player_agents(players, model, client)
@@ -130,15 +137,15 @@ module PlaiTester
         turn_actions = []
 
         loop do
-          action, validation = attempt_turn(agent, player_name, active_actions + ['end_turn'])
+          offered = end_turn_allowed?(player_name) ? active_actions + ['end_turn'] : active_actions
+          action, _validation = attempt_turn(agent, player_name, offered)
 
           if action['action'] == 'end_turn'
             turn_actions << { 'action' => 'end_turn', 'parameters' => {}, 'reasoning' => action['reasoning'], 'reactions' => [] }
             break
           end
 
-          validation = resolve_random_if_needed(validation, action)
-          @game_state.apply_changes(validation['state_changes'])
+          apply_action_effects(player_name, action)
 
           reactions = triggers_reactions?(action) ? reaction_pass(action, player_name) : []
 
@@ -149,8 +156,7 @@ module PlaiTester
             'reactions'  => reactions
           }
 
-          # Stop prompting for more actions if the game ended mid-turn
-          break if game_over?
+          break if ends_turn_immediately?(action) || game_over?
         end
 
         entry = {
@@ -173,14 +179,13 @@ module PlaiTester
         reaction_action_types = @rules.fetch('actions', []).select { |a| a['reaction'] }.map { |a| a['type'] }
 
         @game_state.players.reject { |p| p == acting_player }.filter_map do |player_name|
-          agent          = @players[player_name]
+          agent              = @players[player_name]
           action, validation = attempt_reaction(agent, player_name, acting_player, triggering_action, reaction_action_types)
 
           puts "  #{player_name} reacts: #{action['action']}"
           next if action['action'] == 'no_op'
 
-          validation = resolve_random_if_needed(validation, action)
-          @game_state.apply_changes(validation['state_changes']) if validation['valid']
+          apply_action_effects(player_name, action) if validation&.fetch('valid', false)
 
           {
             'player'     => player_name,
@@ -236,6 +241,8 @@ module PlaiTester
           # end_turn needs no referee — the player decides when they're done
           return [action, nil] if action['action'] == 'end_turn'
 
+          return [action, nil] unless validate_action?(action)
+
           validation = @referee.validate(player: player_name, action: action, game_state: @game_state.serialize, context: Protocol::Context.turn_action)
 
           if validation['valid']
@@ -281,7 +288,7 @@ module PlaiTester
       end
 
       def generate_report(stall_context: nil)
-        FileUtils.mkdir_p(PlaiTester::REPORTS_DIR)
+        FileUtils.mkdir_p(PlaiTester.reports_dir)
         Reporter::ReportBuilder.new(
           session_id:   @manager.session_id,
           rules:        @rules,

@@ -13,7 +13,7 @@ module PlaiTester
         sections = [header, summary, player_performance, turn_log_section, observations]
         sections << stall_section if @stall_context
         report = sections.join("\n\n---\n\n")
-        path   = File.join(PlaiTester::REPORTS_DIR, "#{@session_id}.md")
+        path   = File.join(PlaiTester.reports_dir, "#{@session_id}.md")
         File.write(path, report)
         path
       end
