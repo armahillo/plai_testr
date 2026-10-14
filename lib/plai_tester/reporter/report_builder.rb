@@ -1,18 +1,17 @@
 module PlaiTester
   module Reporter
     class ReportBuilder
-      def initialize(session_id:, rules:, game_state:, turn_log:, stall_context: nil)
-        @session_id    = session_id
-        @rules         = rules
-        @game_state    = game_state
-        @turn_log      = turn_log
-        @stall_context = stall_context
+      def initialize(session_id:, rules:, game_state:, turn_log:, think_log: ThinkLog.new(''), sections: [])
+        @session_id = session_id
+        @rules      = rules
+        @game_state = game_state
+        @turn_log   = turn_log
+        @think_log  = think_log
+        @sections   = sections
       end
 
       def build
-        sections = [header, summary, player_performance, turn_log_section, observations]
-        sections << stall_section if @stall_context
-        report = sections.join("\n\n---\n\n")
+        report = [header, result, reliability, speed, *@sections, turn_log_section].join("\n\n---\n\n")
         path   = File.join(PlaiTester.reports_dir, "#{@session_id}.md")
         File.write(path, report)
         path
@@ -21,6 +20,8 @@ module PlaiTester
       private
 
       def header
+        custom = @game_state.custom
+
         <<~MD.strip
           # Playtest Report: #{@rules.dig('game', 'name')}
 
@@ -29,136 +30,71 @@ module PlaiTester
           | **Session** | `#{@session_id}` |
           | **Rules version** | #{@rules.dig('game', 'version')} |
           | **Players** | #{@game_state.players.join(', ')} |
-          | **Total turns** | #{@game_state.turn} |
+          | **Player model** | #{custom['player_model'] || 'unknown'} |
+          | **Host** | #{custom['host'] || 'unknown'} |
+          | **Seed** | #{custom['seed']} |
+          | **Decisions** | #{@game_state.turn} |
           | **Generated** | #{Time.now.strftime('%Y-%m-%d %H:%M')} |
         MD
       end
 
-      def summary
-        winner = @game_state.scores.max_by { |_, v| v.to_i }&.first
-        score_lines = @game_state.scores.map { |p, s| "| #{p} | #{s} |" }.join("\n")
+      def result
+        flags  = @game_state.flags
+        winner = flags['winner'] || leader
+        scores = @game_state.scores.map { |p, s| "| #{p} | #{s} |" }.join("\n")
 
         <<~MD.strip
-          ## Summary
+          ## Result
 
-          The game concluded after **#{@game_state.turn} turns**.
-
-          ### Final scores
+          **Winner: #{winner || 'none'}**#{" (#{flags['end_reason'].to_s.tr('_', ' ')})" if flags['end_reason']}
 
           | Player | Score |
           |---|---|
-          #{score_lines}
-
-          **Winner: #{winner || 'undetermined'}**
-
-          ### Flags at game end
-
-          #{@game_state.flags.empty? ? '_none_' : @game_state.flags.map { |k, v| "- `#{k}`: #{v}" }.join("\n")}
+          #{scores}
         MD
       end
 
-      def player_performance
-        lines = ["## Player Performance"]
+      def leader
+        top = @game_state.scores.select { |_, s| s.to_i.positive? }.max_by { |_, s| s.to_i }
+        top && @game_state.scores.values.count(top.last) == 1 ? top.first : nil
+      end
 
-        @game_state.players.each do |player|
-          turns       = @turn_log.select { |t| t['player'] == player }
-          all_actions = turns.flat_map { |t| t['actions'].reject { |a| a['action'] == 'end_turn' } }
-          counts      = all_actions.group_by { |a| a['action'] }.transform_values(&:count)
+      def reliability
+        asked     = @turn_log.reject { |t| t['auto'] }
+        fallbacks = asked.count { |t| t['fallback'] }
+        rate      = asked.empty? ? 0 : (100.0 * fallbacks / asked.length).round(1)
 
-          lines << "\n### #{player}"
-          lines << "- Turns taken: #{turns.length}"
-          lines << "- Final score: #{@game_state.scores[player]}"
+        <<~MD.strip
+          ## Model reliability
 
-          unless counts.empty?
-            lines << "- Actions:"
-            counts.each { |action, count| lines << "  - `#{action}`: #{count}x" }
-          end
-        end
+          | Decisions | Asked the model | Only one option | Needed a retry | Fallbacks (no valid choice → option 1) | Fallback rate |
+          |---|---|---|---|---|---|
+          | #{@turn_log.length} | #{asked.length} | #{@turn_log.length - asked.length} | #{asked.count { |t| t['attempts'].to_i > 1 }} | #{fallbacks} | #{rate}% |
+        MD
+      end
 
-        lines.join("\n")
+      def speed
+        log = @think_log
+        return "## Speed\n\nNo model calls were logged." if log.calls.empty?
+
+        cell = ->(value, digits = 1) { value ? value.round(digits) : '—' }
+
+        <<~MD.strip
+          ## Speed
+
+          | Model calls | Minutes | Avg s / call | Avg prompt tokens | Prompt tok/s | Gen tok/s | Model load s (total) |
+          |---|---|---|---|---|---|---|
+          | #{log.calls.length} | #{cell.call(log.minutes)} | #{cell.call(log.average('total_s'))} | #{cell.call(log.average('prompt_tokens'), 0)} | #{cell.call(log.average('prompt_tps'), 0)} | #{cell.call(log.average('eval_tps'))} | #{cell.call(log.values('load_s').sum)} |
+        MD
       end
 
       def turn_log_section
-        lines = ["## Turn-by-Turn Log"]
-
-        @turn_log.each do |turn|
-          lines << "\n**Turn #{turn['turn']} — #{turn['player']}**"
-
-          turn['actions'].each do |action|
-            next if action['action'] == 'end_turn'
-
-            lines << "- `#{action['action']}` #{format_params(action['parameters'])}"
-            lines << "  > #{action['reasoning']}" if action['reasoning']
-
-            action['reactions'].each do |reaction|
-              lines << "  - _#{reaction['player']} reacted_: `#{reaction['action']}` #{format_params(reaction['parameters'])}"
-            end
-          end
+        lines = @turn_log.map do |t|
+          line = "- **#{t['turn']}. #{t['player']}:** #{t['label']}#{' _(only option)_' if t['auto']}#{' **[FALLBACK]**' if t['fallback']}"
+          t['reasoning'].to_s.empty? ? line : "#{line}\n  > #{t['reasoning']}"
         end
 
-        lines.join("\n")
-      end
-
-      def observations
-        spread = score_spread
-
-        <<~MD.strip
-          ## Observations
-
-          _Automated observations for balance and flow assessment._
-
-          - **Game length**: #{@game_state.turn} turns
-          - **Score spread**: #{spread}
-          - **Turn distribution**: #{turn_distribution}
-        MD
-      end
-
-      def score_spread
-        values = @game_state.scores.values.map(&:to_i)
-        return 'N/A' if values.empty?
-
-        "#{values.min}–#{values.max} (delta: #{values.max - values.min})"
-      end
-
-      def turn_distribution
-        counts = @turn_log.group_by { |t| t['player'] }.transform_values(&:count)
-        counts.map { |p, n| "#{p}: #{n}" }.join(', ')
-      end
-
-      def stall_section
-        ctx      = @stall_context
-        attempts = ctx[:attempts].map do |a|
-          <<~MD.strip
-            **Attempt #{a[:attempt]}**
-            - Action: `#{a[:action]['action']}` #{format_params(a[:action]['parameters'])}
-            - Reasoning: #{a[:action]['reasoning']}
-            - Rejection: #{a[:rejection]}
-          MD
-        end.join("\n\n")
-
-        <<~MD.strip
-          ## Session Stalled
-
-          > The session ended because **#{ctx[:player]}** could not produce a valid action on turn #{ctx[:turn]}
-          > after #{ctx[:attempts].length} attempts. Review the attempts and rejections below to identify
-          > what rules clarification is needed.
-
-          ### Game state at stall
-
-          ```json
-          #{JSON.pretty_generate(ctx[:game_state])}
-          ```
-
-          ### Failed attempts
-
-          #{attempts}
-        MD
-      end
-
-      def format_params(params)
-        return '' if params.nil? || params.empty?
-
-        params.map { |k, v| "#{k}=#{v}" }.join(' ')
+        "## Turn log\n\n<details><summary>#{lines.length} decisions</summary>\n\n#{lines.join("\n")}\n\n</details>"
       end
     end
   end

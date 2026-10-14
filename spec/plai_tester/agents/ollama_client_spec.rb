@@ -30,4 +30,15 @@ RSpec.describe PlaiTester::Agents::OllamaClient do
 
     expect { client.chat(model: 'm', messages: [], num_ctx: 4096) }.to output(/context nearly full: 3900\/4096/).to_stderr
   end
+
+  it 'formats Ollama timing stats for the think log, and the think log reads them back' do
+    stats = { 'prompt_eval_count' => 4000, 'prompt_eval_duration' => 4_000_000_000, 'eval_count' => 80,
+              'eval_duration' => 2_000_000_000, 'load_duration' => 500_000_000, 'total_duration' => 7_000_000_000 }
+
+    line = client.send(:format_stats, stats)
+    call = PlaiTester::Reporter::ThinkLog.new("[2026-10-14T10:00:00Z] model=m#{line}").calls.first
+
+    expect(line).to eq(' prompt_tokens=4000 prompt_tps=1000.0 eval_tokens=80 eval_tps=40.0 load_s=0.5 total_s=7.0')
+    expect(call).to include('prompt_tps' => 1000.0, 'eval_tps' => 40.0, 'total_s' => 7.0)
+  end
 end

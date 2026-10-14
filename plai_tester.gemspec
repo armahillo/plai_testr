@@ -10,12 +10,12 @@ Gem::Specification.new do |spec|
 
   spec.description = <<~DESC.strip
     PlaiTester mediates sessions of board games between LLM agents running locally
-    via Ollama, records turn-by-turn transcripts with reasoning, and generates
-    playtest reports to help game designers assess balance and gameplay issues.
+    via Ollama. The game lists every legal move as a numbered menu and the model picks
+    one. It records turn-by-turn transcripts with reasoning, checkpoints for resuming,
+    and generates playtest reports to help game designers assess balance and gameplay issues.
   DESC
 
-  spec.files         = Dir['lib/**/*.rb', 'rules/**/*', 'bin/*']
-  spec.executables   = ['plai_tester']
+  spec.files         = Dir['lib/**/*.rb', 'rules/**/*']
   spec.require_paths = ['lib']
 
   spec.required_ruby_version = '>= 3.1'

@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema",
   "description": "TESTR rules schema v1.0",
-  "required": ["game", "components", "setup", "turn_structure", "actions", "win_conditions"],
+  "required": ["game"],
   "properties": {
     "game": {
       "description": "Game metadata",

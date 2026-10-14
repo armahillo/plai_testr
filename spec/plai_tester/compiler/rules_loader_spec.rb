@@ -19,7 +19,7 @@ RSpec.describe PlaiTester::Compiler::RulesLoader do
     end
 
     it 'raises when required keys are missing' do
-      bad_rules = { 'game' => { 'name' => 'Incomplete' } }
+      bad_rules = { 'components' => [] }
       allow(File).to receive(:exist?).and_return(true)
       allow(File).to receive(:read).and_return(JSON.generate(bad_rules))
 

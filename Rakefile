@@ -1,8 +1,8 @@
 $LOAD_PATH.unshift File.expand_path('lib', __dir__)
 require 'plai_tester'
 
-PLAYER_MODEL  = ENV.fetch('PLAITESTER_PLAYER_MODEL',  'llama3.2:3b')
-REFEREE_MODEL = ENV.fetch('PLAITESTER_REFEREE_MODEL', 'qwen3:8b')
+PLAYER_MODEL  = ENV.fetch('PLAITESTER_PLAYER_MODEL',  'qwen3:8b')
+REFEREE_MODEL = ENV['PLAITESTER_REFEREE_MODEL']
 OLLAMA_HOST   = ENV.fetch('PLAITESTER_OLLAMA_HOST',   'localhost')
 OLLAMA_PORT   = ENV.fetch('PLAITESTER_OLLAMA_PORT',   '11434').to_i
 
@@ -34,7 +34,7 @@ namespace :check do
     if tags_response
       available = Array(tags_response['models']).map { |m| m['name'] }
 
-      [PLAYER_MODEL, REFEREE_MODEL].uniq.each do |model|
+      [PLAYER_MODEL, REFEREE_MODEL].compact.uniq.each do |model|
         print "Model #{model} ... "
         # Ollama model names may include tags like "llama3.2:3b" or just "llama3.2"
         found = available.any? { |a| a == model || a.start_with?("#{model}:") || a == "#{model}:latest" }
@@ -54,7 +54,7 @@ namespace :check do
       [
         { label: "Player model (#{PLAYER_MODEL})",   model: PLAYER_MODEL },
         { label: "Referee model (#{REFEREE_MODEL})", model: REFEREE_MODEL }
-      ].uniq { |e| e[:model] }.each do |entry|
+      ].select { |e| e[:model] }.uniq { |e| e[:model] }.each do |entry|
         print "Inference #{entry[:label]} ... "
         begin
           response = client.chat(

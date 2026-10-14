@@ -1,103 +1,45 @@
 # PlaiTester
 
-Automated board game playtesting using locally-hosted LLM agents via [Ollama](https://ollama.com).
+Automated board game playtesting with locally hosted LLM players via [Ollama](https://ollama.com).
 
-PlaiTester runs sessions of a board game autonomously — player agents make decisions, a referee agent enforces the rules, and the platform records the full session to a markdown report for review.
+PlaiTester is game-agnostic. A game supplies the rules engine: every turn it lists the legal moves as a numbered menu, the player model picks a number, and the game applies it. PlaiTester handles the model calls, retries and fallbacks, checkpoints and resume, transcripts, and reports. An optional referee answers yes/no rules questions for conditions that are awkward to encode.
 
 ## Requirements
 
 - Ruby 3.1+
-- Ollama running on a local machine
-- Ollama models pulled for player and referee roles (see [Models](#models))
+- Ollama running locally (or reachable on your network)
+- A pulled player model, e.g. `ollama pull qwen3:8b`
 
 ## Installation
 
-Add to your game project's `Gemfile`:
-
 ```ruby
-gem 'plai_tester', path: '/path/to/plai_tester'
+gem 'plai_tester', path: '/path/to/plai_testr'
 ```
 
-Or once published:
+## Writing a game
 
-```ruby
-gem 'plai_tester'
-```
+A game is a `Session::Runner` subclass plus state classes. The runner implements:
 
-Then:
-
-```bash
-bundle install
-```
-
-## Usage
-
-```bash
-# Start a new session
-bundle exec plai_tester start rules/my_game.json
-
-# Resume an interrupted session
-bundle exec plai_tester resume <session_id>
-
-# List all sessions
-bundle exec plai_tester list
-
-# Generate a report from a saved session
-bundle exec plai_tester report <session_id>
-```
-
-Interrupt a running session at any time with `Ctrl+C` — state is saved automatically. Resume with the session ID printed on exit.
-
-## Configuration
-
-All configuration is via environment variables.
-
-| Variable | Default | Description |
+| Hook | Required | Purpose |
 |---|---|---|
-| `PLAITESTER_PLAYER_MODEL` | `llama3.2:3b` | Ollama model for player agents |
-| `PLAITESTER_REFEREE_MODEL` | `qwen3:8b` | Ollama model for referee agent |
-| `PLAITESTER_OLLAMA_HOST` | `localhost` | Ollama host |
-| `PLAITESTER_OLLAMA_PORT` | `11434` | Ollama port |
+| `setup` | yes | Build the starting state (not called on resume). `@rng` is seeded. |
+| `legal_moves(player)` | yes | Array of moves: `{ 'label' => …, 'action' => { 'action' => …, 'parameters' => … }, 'public' => … }` |
+| `apply_action_effects(player, action)` | yes | Apply the chosen move's `action` to `@game_state` |
+| `next_player` | | Who acts next (default: alternate) |
+| `pick_range(player)` | | `[min, max]` to have the player pick several moves at once; applied as `parameters['values']` |
+| `game_over?` | | Default: `flags['game_over'] == true`. Set `flags['winner']` and `flags['end_reason']` for the report. |
+| `rules_text_for`, `view_text_for`, `prompt_note_for` | | Prompt text: rules, the player's view, a one-off note |
+| `recent_events_for` | | Recent events shown to the player (default: own labels, others' `public` text) |
+| `debrief_questions`, `debrief_view_for` | | End-of-game designer feedback questions |
+| `report_sections` | | Extra markdown sections for the session report |
 
-To run against a separate machine on your network:
+A menu with one move is applied without calling the model. Unparseable replies are retried, then fall back to option 1 and are flagged in the report.
 
-```bash
-PLAITESTER_OLLAMA_HOST=192.168.1.x bundle exec plai_tester start rules/my_game.json
-```
+For nested decisions (responses, triggered effects, interrupts), include `Session::FrameQueue`: a stack of frames kept in game state, so checkpoints resume mid-sequence. Implement `frame_queue` (the array), `schedule_frames` (what happens when it is empty), and `on_<type>(frame, params)` handlers; frames marked `auto` resolve without a player. Optional: `intercept_frame(frame)` (e.g. hand maintenance) and `halt_frames?`.
 
-## Models
+A rules JSON file needs only `game` (name, version, description); everything else in it is for your game. See `rules/schema.json` and `rules/example.json`.
 
-| Role | Recommended model | Notes |
-|---|---|---|
-| Players | `llama3.2:3b` | Fast, ~2GB RAM, no GPU required |
-| Referee | `qwen3:8b` or `mistral:7b` | Better reasoning for rules validation |
-
-With 32GB RAM you can run 2 player agents and a referee concurrently without issue. Ollama will automatically offload referee model layers to the GPU if available.
-
-## Extending PlaiTester for your game
-
-The base gem handles the session loop, checkpointing, agent communication, and reporting. Game-specific behavior — richer player state, custom serialization, game-specific action vocabulary — is added by subclassing the state layer in your own project.
-
-### Project layout
-
-A typical game extension lives in its own directory (or gem):
-
-```
-my_game/
-  lib/
-    my_game.rb               require file
-    my_game/
-      state/
-        player_state.rb      subclass of PlaiTester::State::PlayerState
-        game_state.rb        subclass of PlaiTester::State::GameState
-  spec/
-    my_game/
-      state/
-        player_state_spec.rb
-        game_state_spec.rb
-  rules/
-    my_game.json             rules file (see Rules format below)
-```
+### State classes
 
 ### PlayerState subclass
 
@@ -131,7 +73,7 @@ module MyGame
         @tableau = changes['tableau'] if changes.key?('tableau')
       end
 
-      # Full state — referee and checkpoints see everything
+      # Full state — checkpoints see everything
       def serialize
         super.merge('tableau' => @tableau)
       end
@@ -147,9 +89,9 @@ end
 ```
 
 Key methods:
-- `serialize` — full state, used by the referee and for checkpoints. Call `super` and merge your additions.
+- `serialize` — full state, used for checkpoints. Call `super` and merge your additions.
 - `serialize_for(observer)` — per-observer view. Return `serialize` for self; filter for opponents. The base implementation hides hand contents and shows only hand size.
-- `apply_changes(changes)` — receives a hash from the referee's `state_changes` response. Call `super` first, then handle your additions.
+- `apply_changes(changes)` — merges a hash of changes (`score`, `hand`, `flags`, plus your additions). Call `super` first, then handle your additions.
 - `from_h(data)` — deserializes a checkpoint; must round-trip with `serialize`.
 
 ### GameState subclass
@@ -171,7 +113,7 @@ module MyGame
 
       # serialize is inherited — @custom is included automatically.
       # Override custom_for to filter global state per observer (e.g. hide face-down deck contents).
-      # The full @custom is always sent to the referee and checkpoints via serialize.
+      # The full @custom is always saved in checkpoints via serialize.
       def custom_for(observer)
         @custom.except('shared_deck').merge('deck_size' => shared_deck.length)
       end
@@ -185,119 +127,62 @@ module MyGame
 end
 ```
 
-Global state that doesn't need typed methods can be passed through `apply_changes` using the `custom` key and accessed via `@custom` directly. Typed accessors are recommended for anything the referee or runner needs to reason about explicitly.
+Global state that doesn't need typed methods can be passed through `apply_changes` using the `custom` key and accessed via `@custom` directly. Typed accessors are recommended for anything the runner needs to reason about explicitly.
 
-### Wiring it together
+### Running a game
 
-In your `my_game.rb` require file:
-
-```ruby
-require 'plai_tester'
-
-require_relative 'my_game/state/player_state'
-require_relative 'my_game/state/game_state'
-```
-
-To start a session using your custom state classes, pass `game_state_class:` to `Runner`. You can also subclass `Runner` itself to override the `setup` hook, which runs once before the game loop on new sessions (not on resume) and has access to `@random` (`PlaiTester::Random::Engine`) and `@game_state`:
+`PlaiTester::CLI` gives a game `start`, `batch`, `resume`, `preflight`, `compare` and `list`. Pass it any object that responds to `name`, `runner_class`, `game_state_class`, `rules_file`, `players`, `sessions_dir`, `reports_dir` and `comparison_class`:
 
 ```ruby
-module MyGame
-  class Runner < PlaiTester::Session::Runner
-    private
-
-    def setup
-      deck = @random.shuffle(build_deck)
-      @game_state.apply_changes('custom' => { 'shared_deck' => deck })
-    end
-  end
-end
+PlaiTester::CLI.new(my_game).run(ARGV)
 ```
 
-To start a session using your custom state classes, pass `game_state_class:` to `Runner`. The runner uses it to instantiate state for new sessions and to deserialize checkpoints on resume.
+`Reporter::ModelComparison` compares completed sessions by model and host (speed, reliability, endings); subclass it and override `extra_columns` and `notes` to add game-specific columns.
 
-```ruby
-require 'my_game'
+## Configuration
 
-rules = PlaiTester::Compiler::RulesLoader.load('rules/my_game.json')
+| Variable | Default | Description |
+|---|---|---|
+| `PLAITESTER_PLAYER_MODEL` | `qwen3:8b` | Ollama model for player agents |
+| `PLAITESTER_REFEREE_MODEL` | none | Ollama model for yes/no rulings (only if the game asks for them) |
+| `PLAITESTER_OLLAMA_HOST` | `localhost` | Ollama host |
+| `PLAITESTER_OLLAMA_PORT` | `11434` | Ollama port |
 
-PlaiTester::Session::Runner.new(
-  rules:            rules,
-  players:          ['Player 1', 'Player 2'],
-  models:           { player: 'llama3.2:3b', referee: 'qwen3:8b' },
-  game_state_class: MyGame::State::GameState
-).run
-```
-
-Resume works the same way:
-
-```ruby
-PlaiTester::Session::Runner.resume(
-  session_id:       '4a3f...',
-  models:           { player: 'llama3.2:3b', referee: 'qwen3:8b' },
-  game_state_class: MyGame::State::GameState
-).run
-```
-
-### Rules format
-
-Rules are defined as JSON files. The schema is at `rules/schema.json` in this repo and the annotated example at `rules/example.json` covers a simple two-player card game.
-
-Required top-level keys: `game`, `components`, `setup`, `turn_structure`, `actions`, `win_conditions`.
-
-Because converting human-readable rules to this format is semantically complex, the recommended workflow is to use a capable LLM (e.g. Claude) with this prompt:
-
-> I am using PlaiTester, an automated board game playtesting platform. I need to compile my human-readable rules into the PlaiTester structured rules format. Please convert the following rules document into valid JSON conforming to the schema. Flag any ambiguities as a `notes` field on the relevant section.
->
-> **Schema:** `[paste contents of rules/schema.json]`
->
-> **Rules:** `[paste your rules document]`
-
-Save the output to `rules/<game_name>.json`.
-
-### Running tests
+## Running tests
 
 ```bash
 bundle exec rspec
 ```
 
-To include your game extension's specs, add the extension's `lib` path to `spec_helper.rb`:
-
-```ruby
-$LOAD_PATH.unshift File.expand_path('../my_game/lib', __dir__)
-require 'my_game'
-```
-
 ## Project structure
 
 ```
-bin/
-  plai_tester              CLI entry point
 lib/
   version.rb
   plai_tester.rb           Main require file
   plai_tester/
     agents/
-      ollama_client.rb     HTTP wrapper for Ollama /api/chat
-      player_agent.rb      Builds turn prompts, parses JSON responses
-      referee_agent.rb     Validates actions, computes state changes
+      ollama_client.rb     HTTP wrapper for Ollama /api/chat; logs timings to think.log
+      player_agent.rb      Menu choice, pick-N, and debrief prompts with JSON schemas
+      referee_agent.rb     Optional yes/no rulings
     compiler/
-      rules_loader.rb      Loads and validates a rules JSON file
-    random/
-      engine.rb            Dice rolls, shuffles, coin flips
+      rules_loader.rb      Loads a rules JSON file (requires `game`)
     reporter/
-      report_builder.rb    Generates markdown report from session data
+      think_log.rb         Reads per-call timings from think.log
+      report_builder.rb    Session report: result, reliability, speed, game sections, turn log
+      model_comparison.rb  Compares sessions by model and host; games add columns
     session/
       manager.rb           Checkpoint save/load, transcript append
-      runner.rb            Main game loop and SIGINT handler
+      runner.rb            Menu-turn loop and SIGINT handler
+      frame_queue.rb       Optional stack of pending decisions for nested sequences
     state/
       base.rb              Abstract base: serialize / serialize_for interface
       player_state.rb      Per-player state: score, hand, flags
-      game_state.rb        Global state: turn, phase, player_states collection
+      game_state.rb        Global state: turn, flags, custom, player_states collection
+    cli.rb                 start / batch / resume / preflight / compare / list for a game
 rules/
-  schema.json              Rules file schema definition
-  example.json             Annotated example (simple High Card game)
-sessions/                  Per-session state checkpoints and transcripts (runtime)
-reports/                   Generated markdown reports (runtime)
+  schema.json              Rules file schema
+  example.json             Annotated example
 ```
 
 ## Session output
@@ -306,4 +191,5 @@ Each session produces:
 
 - `sessions/<id>/state.json` — full game state checkpoint, updated after every turn
 - `sessions/<id>/transcript.jsonl` — turn-by-turn log with player reasoning (one JSON object per line)
-- `reports/<id>.md` — markdown summary report generated at session end
+- `sessions/<id>/think.log` — every model reply, with Ollama's timings per call
+- `reports/<id>.md` — markdown report generated at session end
