@@ -87,27 +87,4 @@ RSpec.describe PlaiTester::Agents::RefereeAgent do
       }.to raise_error(/No JSON found/)
     end
   end
-
-  describe '#resolve_random' do
-    it 'returns parsed response including state changes' do
-      response = '{"valid":true,"reason":"resolved","state_changes":{"flags":{"result":"heads"}}}'
-      allow(client).to receive(:chat).and_return(chat_response(response))
-
-      result = referee.resolve_random(
-        random_results: { 'flip' => 'heads' },
-        game_state:     {},
-        action:         { 'action' => 'coin_flip_action' }
-      )
-
-      expect(result['state_changes']['flags']['result']).to eq('heads')
-    end
-
-    it 'raises when the response contains no JSON' do
-      allow(client).to receive(:chat).and_return(chat_response('Heads it is.'))
-
-      expect {
-        referee.resolve_random(random_results: {}, game_state: {}, action: {})
-      }.to raise_error(/No JSON found/)
-    end
-  end
 end

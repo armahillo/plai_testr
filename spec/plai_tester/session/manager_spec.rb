@@ -44,8 +44,8 @@ RSpec.describe PlaiTester::Session::Manager do
     end
 
     it 'lists saved sessions ordered newest first' do
-      m1 = new_manager
-      m2 = new_manager
+      m1 = new_manager(session_id: 'session-a')
+      m2 = new_manager(session_id: 'session-b')
 
       allow(Time).to receive(:now).and_return(Time.parse('2026-01-01'), Time.parse('2026-01-02'))
 

@@ -15,17 +15,32 @@ module PlaiTester
         @tty         = $stdout.tty?
       end
 
-      def chat(model:, messages:, temperature: 0.7, think: nil, num_predict: nil, num_ctx: nil)
+      # `think`, `format` and `keep_alive` are top-level request fields in Ollama's /api/chat;
+      # only sampling/runtime settings belong in `options`. `format` may be "json" or a JSON schema.
+      def chat(model:, messages:, temperature: 0.7, think: nil, num_predict: nil, num_ctx: nil, format: nil, keep_alive: nil)
         options = { temperature: temperature }
-        options[:think]       = think       unless think.nil?
         options[:num_predict] = num_predict unless num_predict.nil?
         options[:num_ctx]     = num_ctx     unless num_ctx.nil?
-        post('/api/chat', {
-          model:    model,
-          messages: messages,
-          stream:   true,
-          options:  options
-        })
+
+        payload = { model: model, messages: messages, stream: true, options: options }
+        payload[:think]      = think      unless think.nil?
+        payload[:format]     = format     unless format.nil?
+        payload[:keep_alive] = keep_alive unless keep_alive.nil?
+
+        response = post('/api/chat', payload)
+        warn_if_context_nearly_full(response, num_ctx)
+        response
+      end
+
+      # Returns the names of locally pulled models, or raises if the server is unreachable.
+      def model_names
+        http              = Net::HTTP.new(@host, @port)
+        http.open_timeout = 5
+        http.read_timeout = 10
+        response          = http.get('/api/tags')
+        raise "Ollama API error #{response.code}" unless response.is_a?(Net::HTTPSuccess)
+
+        JSON.parse(response.body).fetch('models', []).map { |m| m['name'] }
       end
 
       private
@@ -94,15 +109,29 @@ module PlaiTester
         clear_spinner
         raise 'Ollama API error: stream ended without a done chunk' unless final_chunk
 
-        write_think_log(payload[:model], assembled_content)
+        write_think_log(payload[:model], assembled_content, final_chunk['prompt_eval_count'])
         final_chunk.merge('message' => { 'role' => 'assistant', 'content' => assembled_content })
       end
 
-      def write_think_log(model, content)
+      CONTEXT_WARN_RATIO = 0.9
+
+      # Ollama silently truncates prompts that exceed num_ctx. prompt_eval_count tells us how
+      # many prompt tokens were actually evaluated, so a value near the limit means truncation.
+      def warn_if_context_nearly_full(response, num_ctx)
+        used = response['prompt_eval_count']
+        return unless used && num_ctx
+        return if used < num_ctx * CONTEXT_WARN_RATIO
+
+        message = "context nearly full: #{used}/#{num_ctx} prompt tokens (model=#{response['model']})"
+        $stderr.puts "  [WARNING: #{message}]"
+        File.open(@think_log, 'a') { |f| f.puts "[WARNING] #{message}\n---\n\n" } if @think_log
+      end
+
+      def write_think_log(model, content, prompt_tokens = nil)
         return unless @think_log
 
         File.open(@think_log, 'a') do |f|
-          f.puts "[#{Time.now.utc.iso8601}] model=#{model}"
+          f.puts "[#{Time.now.utc.iso8601}] model=#{model}#{" prompt_tokens=#{prompt_tokens}" if prompt_tokens}"
           f.puts content
           f.puts '---'
           f.puts

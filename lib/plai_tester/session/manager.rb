@@ -4,7 +4,9 @@ module PlaiTester
       attr_reader :session_id
 
       def initialize(session_id: nil, base_dir: PlaiTester.sessions_dir)
-        @session_id = (session_id || Time.now.to_i).to_s
+        # Timestamp plus a random suffix: readable, sortable, and unique even when a batch
+        # starts several sessions within the same second.
+        @session_id = (session_id || "#{Time.now.strftime('%Y%m%d-%H%M%S')}-#{SecureRandom.hex(2)}").to_s
         @base_dir   = base_dir
         FileUtils.mkdir_p(session_dir)
       end

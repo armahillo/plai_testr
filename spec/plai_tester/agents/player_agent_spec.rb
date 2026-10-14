@@ -104,4 +104,71 @@ RSpec.describe PlaiTester::Agents::PlayerAgent do
       expect { agent.react_to('Bob', {}, {}, []) }.to raise_error(/No JSON found/)
     end
   end
+
+  describe '#choose' do
+    let(:labels) { ['Take card A', 'Take card B', 'Take card C'] }
+
+    def choose
+      agent.choose(rules_text: 'RULES', view_text: 'VIEW', labels: labels, plan: 'old plan', recent: ['Bob: took X'])
+    end
+
+    it 'returns the chosen option with reasoning and plan' do
+      allow(client).to receive(:chat).and_return(chat_response('{"choice":2,"reasoning":"B is better","plan":"take B"}'))
+
+      result = choose
+
+      expect(result).to include('choice' => 2, 'reasoning' => 'B is better', 'plan' => 'take B', 'attempts' => 1, 'fallback' => false)
+    end
+
+    it 'numbers the legal moves and requests schema-constrained JSON with thinking off' do
+      expect(client).to receive(:chat) do |args|
+        expect(args[:messages].last[:content]).to include("1. Take card A\n2. Take card B\n3. Take card C")
+        expect(args[:messages].last[:content]).to include('YOUR PLAN SO FAR: old plan', '- Bob: took X')
+        expect(args).to include(think: false, num_ctx: 8192, format: described_class::MENU_SCHEMA)
+        chat_response('{"choice":1,"reasoning":"r","plan":"p"}')
+      end
+
+      choose
+    end
+
+    it 're-prompts after an out-of-range choice' do
+      allow(client).to receive(:chat).and_return(
+        chat_response('{"choice":9,"reasoning":"r","plan":"p"}'),
+        chat_response('{"choice":3,"reasoning":"r","plan":"p"}')
+      )
+
+      expect(choose).to include('choice' => 3, 'attempts' => 2, 'fallback' => false)
+    end
+
+    it 'falls back to option 1 and flags it when no valid choice is ever made' do
+      allow(client).to receive(:chat).and_return(chat_response('not json at all'))
+
+      expect(choose).to include('choice' => 1, 'fallback' => true)
+    end
+  end
+
+  describe '#debrief' do
+    let(:questions) { ['Strongest card?', 'Weakest card?'] }
+
+    def debrief
+      agent.debrief(rules_text: 'RULES', view_text: 'FINAL VIEW', questions: questions)
+    end
+
+    it 'asks every question once and pairs each answer with its question' do
+      expect(client).to receive(:chat).once do |args|
+        expect(args[:messages].last[:content]).to include('FINAL VIEW', 'q1: Strongest card?', 'q2: Weakest card?')
+        expect(args[:format]['required']).to eq(%w[q1 q2])
+        chat_response('{"q1":"Crushing","q2":"nothing"}')
+      end
+
+      expect(debrief).to eq([{ 'question' => 'Strongest card?', 'answer' => 'Crushing' },
+                             { 'question' => 'Weakest card?',   'answer' => 'nothing' }])
+    end
+
+    it 'returns empty answers instead of raising when the model never replies usefully' do
+      allow(client).to receive(:chat).and_return(chat_response('not json'))
+
+      expect(debrief.map { |a| a['answer'] }).to eq(['', ''])
+    end
+  end
 end

@@ -1,7 +1,7 @@
 require 'spec_helper'
 
 RSpec.describe PlaiTester::Compiler::RulesLoader do
-  let(:example_path) { File.join(PlaiTester::RULES_DIR, 'example.json') }
+  let(:example_path) { File.expand_path('../../../rules/example.json', __dir__) }
 
   describe '.load' do
     it 'loads the example rules file without error' do

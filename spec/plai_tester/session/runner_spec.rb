@@ -7,6 +7,7 @@ RSpec.describe PlaiTester::Session::Runner do
     instance_double(
       PlaiTester::Session::Manager,
       session_id:              'test-session',
+      session_dir:             Dir.tmpdir,
       save_checkpoint:         nil,
       append_transcript_entry: nil
     )
@@ -234,6 +235,60 @@ RSpec.describe PlaiTester::Session::Runner do
         expect(action['action']).to    eq('block')
         expect(validation['valid']).to be true
       end
+    end
+  end
+
+  describe 'menu turns' do
+    let(:menu_runner_class) do
+      Class.new(described_class) do
+        private
+
+        def legal_moves(_player)
+          [{ 'label' => 'Secret move', 'public' => 'did something', 'action' => { 'action' => 'move', 'parameters' => {} } },
+           { 'label' => 'Other move', 'action' => { 'action' => 'attack', 'parameters' => {} } }]
+        end
+
+        def next_player = 'Bob'
+
+        def apply_action_effects(_player, _action); end
+      end
+    end
+
+    let(:menu_runner) { menu_runner_class.new(rules: rules, players: players, models: { player: 'p-model', referee: 'r-model' }) }
+
+    before do
+      allow(client).to receive(:chat).with(hash_including(model: 'p-model'))
+                                     .and_return({ 'message' => { 'content' => '{"choice":1,"reasoning":"why","plan":"my plan"}' } })
+      allow($stdout).to receive(:puts)
+    end
+
+    it 'lets the game choose who acts and logs the chosen move without calling the referee' do
+      expect(client).not_to receive(:chat).with(hash_including(model: 'r-model'))
+
+      menu_runner.send(:play_turn)
+      entry = menu_runner.instance_variable_get(:@turn_log).last
+
+      expect(entry).to include('player' => 'Bob', 'label' => 'Secret move', 'public' => 'did something', 'plan' => 'my plan', 'fallback' => false)
+    end
+
+    it "shows other players only the public text of a move" do
+      menu_runner.send(:play_turn)
+
+      expect(menu_runner.send(:recent_events_for, 'Alice')).to eq(['Bob: did something'])
+      expect(menu_runner.send(:recent_events_for, 'Bob')).to   eq(['You: Secret move'])
+    end
+
+    it 'asks each player the debrief questions once and stores the answers' do
+      menu_runner.define_singleton_method(:debrief_questions) { |_p| ['Any problems?'] }
+      allow(client).to receive(:chat).with(hash_including(model: 'p-model', format: hash_including('required' => ['q1'])))
+                                     .and_return({ 'message' => { 'content' => '{"q1":"none really"}' } })
+
+      menu_runner.send(:run_debrief)
+      menu_runner.send(:run_debrief) # already answered: no second round of questions
+
+      expect(client).to have_received(:chat).with(hash_including(format: hash_including('required' => ['q1']))).twice
+      expect(menu_runner.instance_variable_get(:@game_state).custom['debrief']['Alice'])
+        .to eq([{ 'question' => 'Any problems?', 'answer' => 'none really' }])
     end
   end
 end

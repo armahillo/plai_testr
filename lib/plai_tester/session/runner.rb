@@ -12,14 +12,18 @@ module PlaiTester
     class Runner
       MAX_RETRIES = 3
 
-      def initialize(rules:, players:, models:, ollama_host: 'localhost', ollama_port: 11434, session_id: nil, checkpoint: nil, game_state_class: State::GameState)
+      RECENT_EVENTS = 8
+
+      def initialize(rules:, players:, models:, ollama_host: 'localhost', ollama_port: 11434, session_id: nil, checkpoint: nil, game_state_class: State::GameState, seed: nil)
         @rules            = rules
         @game_state_class = game_state_class
         @manager          = Manager.new(session_id: session_id)
+        @seed             = seed
 
         client    = Agents::OllamaClient.new(host: ollama_host, port: ollama_port, think_log: File.join(@manager.session_dir, 'think.log'))
         @referee  = Agents::RefereeAgent.new(model: models[:referee], client: client, rules: rules)
         @players  = build_player_agents(players, models[:player], client)
+        @models   = models
         @random   = Random::Engine.new
         @running  = true
         @resuming = !checkpoint.nil?
@@ -32,8 +36,22 @@ module PlaiTester
           @turn_log   = []
         end
 
+        # A seed makes setup shuffles reproducible. It is stored in game state so a resumed
+        # session reports the same seed.
+        @seed ||= @game_state.custom['seed'] || Kernel.rand(1_000_000)
+        @rng    = ::Random.new(@seed)
+
         trap('SIGINT') { interrupt! }
       end
+
+      attr_reader :seed
+
+      def session_id
+        @manager.session_id
+      end
+
+      # Status of the last run: 'completed', 'stalled' or 'interrupted'.
+      attr_reader :status
 
       def self.resume(session_id:, models:, ollama_host: 'localhost', ollama_port: 11434, game_state_class: State::GameState)
         manager    = Manager.new(session_id: session_id)
@@ -58,17 +76,30 @@ module PlaiTester
         puts "Players: #{@game_state.players.join(', ')}"
         puts "Press Ctrl+C to save state and exit.\n\n"
 
-        setup unless @resuming
+        unless @resuming
+          @game_state.apply_changes('custom' => { 'seed' => @seed })
+          setup
+        end
 
         until game_over? || !@running
           play_turn
         end
 
-        save_checkpoint('completed')
-        path = generate_report
-        puts "\nGame complete. Report: #{path}"
+        run_debrief if game_over? && @running
+
+        if game_over?
+          @status = 'completed'
+          save_checkpoint('completed')
+          path = generate_report
+          puts "\nGame complete. Report: #{path}"
+        else
+          @status = 'interrupted'
+          save_checkpoint('interrupted')
+          puts "Saved after turn #{@game_state.turn}. Resume with: resume #{@manager.session_id}"
+        end
       rescue StalledError => e
         puts "\n  STALLED: #{e.message}"
+        @status = 'stalled'
         save_checkpoint('stalled')
         path = generate_report(stall_context: e.context)
         puts "  State saved. Review the report for what was attempted: #{path}"
@@ -127,8 +158,72 @@ module PlaiTester
         end
       end
 
+      # --- Menu-turn hooks -------------------------------------------------------------
+      # Games opt into menu turns by returning an array from legal_moves. Each move is
+      #   { 'label' => String, 'action' => Hash, 'public' => String (optional) }
+      # 'label' is what the acting player sees; 'public' is what opponents see in their
+      # recent-events list (defaults to the label — set it whenever the move is private).
+      # Return nil to use the legacy free-form action + referee validation path.
+
+      def legal_moves(_player_name)
+        nil
+      end
+
+      # Who acts next. Default: strict alternation via GameState#advance_turn.
+      def next_player
+        @game_state.current_player
+      end
+
+      # Rules text for the menu system prompt. Override to scope rules to the current phase.
+      def rules_text_for(_player_name)
+        @rules.dig('game', 'description').to_s
+      end
+
+      # What the player is allowed to see, as text. Override with a readable view.
+      def view_text_for(player_name)
+        JSON.pretty_generate(@game_state.serialize_for(player_name))
+      end
+
+      # Optional one-off note for this prompt (e.g. "your stack choice collided; choose again").
+      def prompt_note_for(_player_name)
+        nil
+      end
+
+      # Questions each player answers once after the game ends (designer feedback).
+      # Return [] to skip the debrief.
+      def debrief_questions(_player_name)
+        []
+      end
+
+      # What a player sees while answering the debrief; defaults to their normal view.
+      def debrief_view_for(player_name)
+        view_text_for(player_name)
+      end
+
+      # Stored in custom['debrief'] so a resumed session does not ask a player twice.
+      def run_debrief
+        @game_state.players.each do |player_name|
+          questions = debrief_questions(player_name)
+          next if questions.empty? || @game_state.custom.dig('debrief', player_name)
+
+          puts "Debrief — #{player_name}"
+          answers = @players[player_name].debrief(
+            rules_text: rules_text_for(player_name),
+            view_text:  debrief_view_for(player_name),
+            questions:  questions
+          )
+          @game_state.apply_changes('custom' => { 'debrief' => (@game_state.custom['debrief'] || {}).merge(player_name => answers) })
+          save_checkpoint('in_progress')
+        end
+      end
+
       def play_turn
-        player_name    = @game_state.current_player
+        player_name = next_player
+        @game_state.current_player = player_name
+
+        moves = legal_moves(player_name)
+        return play_menu_turn(player_name, moves) if moves
+
         agent          = @players[player_name]
         active_actions = available_actions_for(player_name)
 
@@ -170,6 +265,60 @@ module PlaiTester
         @manager.append_transcript_entry(entry)
         @game_state.advance_turn
         save_checkpoint('in_progress')
+      end
+
+      # Menu turns cannot be illegal (every option is legal by construction), so there is no
+      # referee call and no StalledError — an unparseable reply falls back to option 1 and is
+      # flagged in the transcript instead.
+      def play_menu_turn(player_name, moves)
+        raise "#{self.class}#legal_moves returned no moves for #{player_name}" if moves.empty?
+
+        puts "Turn #{@game_state.turn + 1} — #{player_name} (#{moves.length} options)"
+
+        result = @players[player_name].choose(
+          rules_text:  rules_text_for(player_name),
+          view_text:   view_text_for(player_name),
+          labels:      moves.map { |m| m['label'] },
+          plan:        last_plan(player_name),
+          recent:      recent_events_for(player_name),
+          prompt_note: prompt_note_for(player_name)
+        )
+        move = moves[result['choice'] - 1]
+        puts "  -> #{move['label']}#{' [FALLBACK]' if result['fallback']}#{" (#{result['attempts']} tries)" if result['attempts'] > 1}"
+
+        apply_action_effects(player_name, move['action'])
+
+        entry = {
+          'turn'        => @game_state.turn + 1,
+          'player'      => player_name,
+          'mode'        => 'menu',
+          'options'     => moves.length,
+          'choice'      => result['choice'],
+          'label'       => move['label'],
+          'public'      => move['public'] || move['label'],
+          'reasoning'   => result['reasoning'],
+          'plan'        => result['plan'],
+          'attempts'    => result['attempts'],
+          'fallback'    => result['fallback'],
+          'actions'     => [move['action'].merge('reasoning' => result['reasoning'], 'reactions' => [])],
+          'state_after' => @game_state.serialize
+        }
+
+        @turn_log << entry
+        @manager.append_transcript_entry(entry)
+        @game_state.advance_turn
+        save_checkpoint('in_progress')
+      end
+
+      def last_plan(player_name)
+        @turn_log.reverse.find { |t| t['player'] == player_name && t['plan'] }&.fetch('plan')
+      end
+
+      # Own moves show their full label; other players' moves show only their public text.
+      def recent_events_for(player_name)
+        @turn_log.select { |t| t['mode'] == 'menu' }.last(RECENT_EVENTS).map do |t|
+          t['player'] == player_name ? "You: #{t['label']}" : "#{t['player']}: #{t['public']}"
+        end
       end
 
       # After an action that triggers reactions, query each other player in turn order.
@@ -298,11 +447,13 @@ module PlaiTester
         ).build
       end
 
+      # First Ctrl+C: finish the turn in progress, checkpoint, and stop cleanly.
+      # Second Ctrl+C: exit immediately — the checkpoint from the last completed turn is on disk.
       def interrupt!
-        puts "\n\nInterrupted — saving state..."
-        save_checkpoint('interrupted')
-        puts "Saved. Resume with: plai_tester resume #{@manager.session_id}"
+        exit!(130) unless @running
+
         @running = false
+        $stderr.puts "\n\nInterrupted — finishing the current turn, then saving. Press Ctrl+C again to quit immediately."
       end
     end
   end

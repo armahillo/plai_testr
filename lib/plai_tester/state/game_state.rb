@@ -20,6 +20,15 @@ module PlaiTester
         @players[@current_player_index]
       end
 
+      # Lets games with non-alternating turn order (simultaneous choices, rotating
+      # starting players) decide who acts next. advance_turn still rotates by default.
+      def current_player=(name)
+        index = @players.index(name)
+        raise ArgumentError, "Unknown player: #{name.inspect}" unless index
+
+        @current_player_index = index
+      end
+
       def player_state(name)
         @player_states[name]
       end
