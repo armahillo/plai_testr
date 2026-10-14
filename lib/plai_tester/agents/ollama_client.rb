@@ -109,7 +109,7 @@ module PlaiTester
         clear_spinner
         raise 'Ollama API error: stream ended without a done chunk' unless final_chunk
 
-        write_think_log(payload[:model], assembled_content, final_chunk['prompt_eval_count'])
+        write_think_log(payload[:model], assembled_content, final_chunk)
         final_chunk.merge('message' => { 'role' => 'assistant', 'content' => assembled_content })
       end
 
@@ -127,15 +127,28 @@ module PlaiTester
         File.open(@think_log, 'a') { |f| f.puts "[WARNING] #{message}\n---\n\n" } if @think_log
       end
 
-      def write_think_log(model, content, prompt_tokens = nil)
+      def write_think_log(model, content, stats = {})
         return unless @think_log
 
         File.open(@think_log, 'a') do |f|
-          f.puts "[#{Time.now.utc.iso8601}] model=#{model}#{" prompt_tokens=#{prompt_tokens}" if prompt_tokens}"
+          f.puts "[#{Time.now.utc.iso8601}] model=#{model}#{format_stats(stats)}"
           f.puts content
           f.puts '---'
           f.puts
         end
+      end
+
+      def format_stats(stats)
+        nanos = 1_000_000_000.0
+        rate  = ->(count, duration) { count && duration.to_i.positive? ? (count / (duration / nanos)).round(1) : nil }
+        {
+          'prompt_tokens' => stats['prompt_eval_count'],
+          'prompt_tps'    => rate.call(stats['prompt_eval_count'], stats['prompt_eval_duration']),
+          'eval_tokens'   => stats['eval_count'],
+          'eval_tps'      => rate.call(stats['eval_count'], stats['eval_duration']),
+          'load_s'        => stats['load_duration'] && (stats['load_duration'] / nanos).round(2),
+          'total_s'       => stats['total_duration'] && (stats['total_duration'] / nanos).round(2)
+        }.filter_map { |key, value| " #{key}=#{value}" unless value.nil? }.join
       end
 
       def advance_spinner
