@@ -3,13 +3,14 @@ module PlaiTester
     class ModelComparison
       BASE_COLUMNS = [
         'Model', 'Host', 'Games', 'Seeds', 'Avg minutes', 'Avg s / call', 'Prompt tok/s', 'Gen tok/s',
-        'Avg / max prompt tokens', 'Retries', 'Fallbacks', 'Endings'
+        'Avg / max prompt tokens', 'Retries', 'Fallbacks', 'Endings', 'Wins by persona'
       ].freeze
 
       BASE_NOTES = [
         '*Avg s / call, Prompt tok/s, Gen tok/s*: Ollama\'s own timings per model call. Compare hosts on the same model and seeds. Sessions from before these were logged show —.',
         '*Retries / fallbacks*: reliability. A fallback means the model never gave a valid choice and option 1 was used.',
         '*Endings*: each game\'s end reason and how often it happened.',
+        '*Wins by persona*: the winning player\'s persona in each decided game, for games that assign personas.',
         '*Debrief answers given*: non-empty, non-"nothing" answers to the end-of-game questions. Read them in the session reports; count alone says little.'
       ].freeze
 
@@ -57,7 +58,7 @@ module PlaiTester
           model = state.dig('custom', 'player_model')
           next unless data['status'] == 'completed' && model
 
-          { model: model, host: state.dig('custom', 'host') || 'unknown', seed: state.dig('custom', 'seed'), state: state,
+          { model: "#{model}#{' +think' if state.dig('custom', 'think')}", host: state.dig('custom', 'host') || 'unknown', seed: state.dig('custom', 'seed'), state: state,
             turns: data['turn_log'].reject { |t| t['auto'] }, log: ThinkLog.load(File.join(File.dirname(path), 'think.log')) }
         rescue JSON::ParserError
           nil
@@ -81,9 +82,15 @@ module PlaiTester
           turns.count { |t| t['attempts'].to_i > 1 },
           turns.count { |t| t['fallback'] },
           list.map { |s| s[:state].dig('flags', 'end_reason') || 'unknown' }.tally.map { |r, c| "#{r} #{c}" }.join(', '),
+          persona_wins(list),
           *extra_columns.map { |_, value| value.call(list) },
           answers.empty? ? '—' : "#{given}/#{answers.length}"
         ]
+      end
+
+      def persona_wins(list)
+        wins = list.filter_map { |s| s[:state].dig('custom', 'personas', s[:state].dig('flags', 'winner').to_s) }
+        wins.empty? ? '—' : wins.tally.map { |label, count| "#{label} #{count}" }.join(', ')
       end
 
       def avg(values, digits)

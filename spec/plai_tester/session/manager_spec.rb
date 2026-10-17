@@ -13,6 +13,14 @@ RSpec.describe PlaiTester::Session::Manager do
 
   subject(:manager) { new_manager }
 
+  describe '#session_id' do
+    it 'is a timestamp, with a counter when another session started in the same second' do
+      allow(Time).to receive(:now).and_return(Time.new(2026, 10, 15, 9, 30, 5))
+
+      expect([new_manager, new_manager, new_manager].map(&:session_id)).to eq(%w[20261015-093005 20261015-093005-2 20261015-093005-3])
+    end
+  end
+
   describe '#save_checkpoint and #load_checkpoint' do
     it 'round-trips game state through JSON' do
       game_state.advance_turn

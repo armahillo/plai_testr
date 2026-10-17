@@ -67,8 +67,9 @@ module PlaiTester
         request           = Net::HTTP::Post.new(path, 'Content-Type' => 'application/json')
         request.body      = JSON.generate(payload)
 
-        assembled_content = +''
-        final_chunk       = nil
+        assembled_content  = +''
+        assembled_thinking = +''
+        final_chunk        = nil
 
         http.request(request) do |response|
           unless response.is_a?(Net::HTTPSuccess)
@@ -89,6 +90,7 @@ module PlaiTester
               end
 
               assembled_content << data.dig('message', 'content').to_s
+              assembled_thinking << data.dig('message', 'thinking').to_s
               final_chunk = data if data['done']
               advance_spinner
             end
@@ -109,7 +111,7 @@ module PlaiTester
         clear_spinner
         raise 'Ollama API error: stream ended without a done chunk' unless final_chunk
 
-        write_think_log(payload[:model], assembled_content, final_chunk)
+        write_think_log(payload[:model], assembled_thinking.empty? ? assembled_content : "<think>\n#{assembled_thinking.strip}\n</think>\n#{assembled_content}", final_chunk)
         final_chunk.merge('message' => { 'role' => 'assistant', 'content' => assembled_content })
       end
 

@@ -41,6 +41,35 @@ RSpec.describe PlaiTester::Agents::PlayerAgent do
       choose
     end
 
+    it 'turns thinking on, with room for the thoughts, when built with think: true' do
+      thinker = described_class.new(name: 'Alice', model: 'test-model', client: client, rules: rules, think: true)
+      expect(client).to receive(:chat) do |args|
+        expect(args).to include(think: true, num_ctx: 16_384, num_predict: 8192)
+        chat_response('{"choice":1,"reasoning":"r","plan":"p"}')
+      end
+
+      thinker.choose(rules_text: 'RULES', view_text: 'VIEW', labels: labels)
+    end
+
+    it 'skips thinking on a turn the game marks think: false, keeping the context size so the model is not reloaded' do
+      thinker = described_class.new(name: 'Alice', model: 'test-model', client: client, rules: rules, think: true)
+      expect(client).to receive(:chat) do |args|
+        expect(args).to include(think: false, num_ctx: 16_384, num_predict: 512)
+        chat_response('{"choice":1,"reasoning":"r","plan":"p"}')
+      end
+
+      thinker.choose(rules_text: 'RULES', view_text: 'VIEW', labels: labels, think: false)
+    end
+
+    it 'puts the persona into the system prompt when one is given' do
+      expect(client).to receive(:chat) do |args|
+        expect(args[:messages].first[:content]).to include('YOUR STRATEGY', 'Win by attrition')
+        chat_response('{"choice":1,"reasoning":"r","plan":"p"}')
+      end
+
+      agent.choose(rules_text: 'RULES', view_text: 'VIEW', labels: labels, persona: 'Win by attrition.')
+    end
+
     it 're-prompts after an out-of-range choice' do
       allow(client).to receive(:chat).and_return(
         chat_response('{"choice":9,"reasoning":"r","plan":"p"}'),

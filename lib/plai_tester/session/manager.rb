@@ -3,12 +3,12 @@ module PlaiTester
     class Manager
       attr_reader :session_id
 
-      def initialize(session_id: nil, base_dir: PlaiTester.sessions_dir)
-        # Timestamp plus a random suffix: readable, sortable, and unique even when a batch
-        # starts several sessions within the same second.
-        @session_id = (session_id || "#{Time.now.strftime('%Y%m%d-%H%M%S')}-#{SecureRandom.hex(2)}").to_s
+      def initialize(session_id: nil, base_dir: PlaiTester.sessions_dir, persist: true)
+        # A timestamp: readable and sortable. A second session started within the same second
+        # gets a counter suffix (-2, -3, …) so ids stay unique.
         @base_dir   = base_dir
-        FileUtils.mkdir_p(session_dir)
+        @session_id = (session_id || timestamp_id).to_s
+        FileUtils.mkdir_p(session_dir) if persist
       end
 
       def save_checkpoint(game_state, turn_log, metadata = {})
@@ -34,6 +34,14 @@ module PlaiTester
 
       def append_transcript_entry(entry)
         File.open(transcript_path, 'a') { |f| f.puts(JSON.generate(entry)) }
+      end
+
+      def timestamp_id
+        stamp = Time.now.strftime('%Y%m%d-%H%M%S')
+        id    = stamp
+        count = 1
+        id    = "#{stamp}-#{count += 1}" while Dir.exist?(File.join(@base_dir, id))
+        id
       end
 
       def session_dir
