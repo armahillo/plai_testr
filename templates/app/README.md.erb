@@ -1,0 +1,89 @@
+# <%= app_name %>
+
+Automated playtesting for tabletop games with [PlaiTester](https://github.com/armahillo/plai_testr): local LLM players (via [Ollama](https://ollama.com)) and scripted bots play your game, and every session ends in a markdown report.
+
+## Quick start
+
+```sh
+bundle install
+
+# Bots only, no model needed: 100 games in a few seconds, then a report
+bundle exec plai_tester hearts botrun --games 100
+
+# One game with a local model (needs Ollama running)
+ollama pull qwen3:8b
+bundle exec plai_tester gin_rummy start --seed 1
+```
+
+Reports go in `games/<game>/reports/`; resumable sessions in `games/<game>/sessions/`.
+
+`bin/playtest <game>` runs a complete unattended playtest: it checks Ollama, pulls missing models, runs the specs, plays seeded games and compares models. Run `bin/playtest --help` for the options.
+
+## Commands
+
+```
+bundle exec plai_tester <game> start   [--seed N] [--model M] [--mode llm|hybrid|bot]  One session
+bundle exec plai_tester <game> batch   --seeds 1,2,3 [--model M]                      Several sessions
+bundle exec plai_tester <game> botrun  [--games N]                                     Bots only, many games
+bundle exec plai_tester <game> resume  <session_id>                                    Continue an interrupted session
+bundle exec plai_tester <game> compare [--since ID]                                    Compare models across sessions
+bundle exec plai_tester <game> list                                                    List sessions
+bundle exec plai_tester generate game <name>                                           Add a new game
+```
+
+Ctrl+C once finishes the current turn and saves; Ctrl+C twice quits immediately.
+
+## Layout
+
+```
+Gemfile
+AGENTS.md                 Guide for AI assistants helping build harnesses (CLAUDE.md points to it)
+bin/playtest              Unattended playtest run
+spec/spec_helper.rb       Loads every game under games/
+games/
+  hearts/                 Example: 4-player trick-taking
+  gin_rummy/              Example: 2-player rummy
+```
+
+Each game lives entirely in its own directory:
+
+```
+games/<name>/
+  lib/<name>.rb           Requires the game and registers it with PlaiTester
+  lib/<name>/             Runner (rules engine), bot policy, state classes
+  data/rules.json         Machine-readable rules: game name, version, player count, card deck
+  data/rules.md           Rules text the model players read
+  NOTES.md                Optional: open rules questions and unconfirmed engine choices
+  spec/                   The game's specs
+  sessions/ reports/      Output (gitignored)
+```
+
+## Working with an AI assistant
+
+`AGENTS.md` tells an AI coding assistant how this project works: where the docs are, how to build a harness, and what to ask you before doing. Claude Code reads it through `CLAUDE.md`; run `claude` in this directory and start talking.
+
+Some ways to start:
+
+- *Look around this project and tell me what's here and how to run it.*
+- *I want to playtest my game. The rules are in ~/designs/my_game/rules.md. Read them, list every rules question you have, then set up a harness for it.*
+- *Write bot rules for my_game so it can play itself, run a 1000-game botrun, and summarize the report.*
+- *Read the newest report in games/my_game/reports and tell me what it says about balance. Separate what might be the bot's habits from what might be the game.*
+- *The model players in my_game keep making the same bad choice. Show me the prompt they see and suggest how to make the menu clearer, without telling them what to pick.*
+- *I've ruled that a tie goes to the defender. Update the engine, add a spec, and record the ruling in data/rules.md.*
+- *Add personas to my_game: one player who races, one who blocks.*
+
+## Adding a game
+
+```sh
+bundle exec plai_tester generate game my_game
+```
+
+This creates the skeleton above. Fill in `data/rules.json` and `data/rules.md`, then implement the runner hooks (`setup`, `legal_moves`, `apply_action_effects`) and, optionally, bot rules in `scripted_choice`. The examples show complete games; the [PlaiTester README](https://github.com/armahillo/plai_testr#writing-a-game) lists every hook.
+
+`bundle exec rspec games/my_game` runs its specs. The generated botrun spec stays pending until the game can play itself to the end.
+
+## Removing a game
+
+Delete its directory: `rm -rf games/hearts`. Nothing else refers to it.
+
+Keep all of a game's files under `games/<name>/` so that stays true. If a game ever needs files somewhere else (for example `spec/<name>/`), add a rake task that removes them along with the game directory.

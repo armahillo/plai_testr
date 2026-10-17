@@ -1,0 +1,43 @@
+module <%= module_name %>
+  module Session
+    class Runner < PlaiTester::Session::Runner
+      include Policy
+
+      RULES_PATH = File.expand_path('../../../data/rules.md', __dir__)
+
+      DEBRIEF_QUESTIONS = [
+        'Which decision in this game mattered most, and why?',
+        'Which rule was unclear or confusing?',
+        'Which choices felt automatic (the choice did not matter)?'
+      ].freeze
+
+      private
+
+      def setup
+        raise NotImplementedError, "#{self.class}#setup: build the starting state; PlaiTester::Deck.build(@rules).shuffle(random: @rng) gives a shuffled deck"
+      end
+
+      def legal_moves(_player)
+        raise NotImplementedError, "#{self.class}#legal_moves: return [{ 'label' => text, 'action' => { 'action' => name, 'parameters' => {} } }, ...]"
+      end
+
+      def apply_action_effects(_player, _action)
+        raise NotImplementedError, "#{self.class}#apply_action_effects: apply the move to @game_state; set flags 'game_over', 'winner' and 'end_reason' when the game ends"
+      end
+
+      def rules_text_for(_player) = @rules_text ||= File.read(RULES_PATH)
+
+      def recent_events_for(player) = event_log.recent_for(player, RECENT_EVENTS)
+
+      def debrief_questions(_player) = DEBRIEF_QUESTIONS
+
+      def log(text, to: nil) = event_log.add(text, turn: @game_state.turn, to: to)
+
+      def event_log = PlaiTester::EventLog.new(custom['log'] ||= [])
+
+      def custom         = @game_state.custom
+      def players        = @game_state.players
+      def pstate(player) = @game_state.player_state(player)
+    end
+  end
+end

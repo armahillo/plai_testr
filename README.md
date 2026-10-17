@@ -16,6 +16,12 @@ PlaiTester is game-agnostic. A game supplies the rules engine: every turn it lis
 gem 'plai_tester', path: '/path/to/plai_testr'
 ```
 
+## Guides
+
+- [Nested decisions with FrameQueue](docs/frame_queue.md): attacks and responses, triggered effects, decisions inside decisions
+- [Yes/no rulings with the referee](docs/referee.md): free-text conditions judged by a second model
+- Complete example games ship with `plai_tester new`, under `templates/examples/` in this repository: Hearts (4 players, hidden hands, pick-N passing, custom report sections and botrun report) and Gin Rummy (2 players, engine-computed melds, personas)
+
 ## Writing a game
 
 A game is a `Session::Runner` subclass plus state classes. The runner implements:

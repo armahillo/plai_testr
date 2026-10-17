@@ -3,16 +3,29 @@ module PlaiTester
     def self.start(argv)
       $stdout.sync = true
 
-      name = argv.shift
-      abort "Usage: #{File.basename($PROGRAM_NAME)} <game> <command> [options]   (games: #{PlaiTester.names.join(', ')})" if name.nil? || name.start_with?('-')
-
-      game = begin
-        PlaiTester.load(name)
-      rescue ArgumentError => e
-        abort e.message
+      case argv
+      in ['new', dir]
+        or_abort { Generator.new.app(dir) }
+        puts "\nNext:\n  cd #{dir}\n  bundle install\n  bundle exec plai_tester hearts botrun --games 100"
+      in ['generate', 'game', name]
+        or_abort { Generator.new.game(name) }
+        puts "\nNext: describe the game in games/#{name}/data/, implement games/#{name}/lib/#{name}/session/runner.rb, then run bundle exec rspec games/#{name}"
+      in [String => name, *rest] unless name.start_with?('-')
+        new(or_abort { PlaiTester.load(name) }).run(rest)
+      else
+        abort <<~USAGE
+          Usage:
+            #{File.basename($PROGRAM_NAME)} new <directory>              Create a playtesting app with example games
+            #{File.basename($PROGRAM_NAME)} generate game <name>         Add a game skeleton under games/<name>
+            #{File.basename($PROGRAM_NAME)} <game> <command> [options]   Play a game (games: #{PlaiTester.names.join(', ')})
+        USAGE
       end
+    end
 
-      new(game).run(argv)
+    def self.or_abort
+      yield
+    rescue ArgumentError => e
+      abort e.message
     end
 
     def initialize(game, ollama_host: ENV.fetch('PLAITESTER_OLLAMA_HOST', 'localhost'), ollama_port: ENV.fetch('PLAITESTER_OLLAMA_PORT', '11434').to_i)

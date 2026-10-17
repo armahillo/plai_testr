@@ -15,7 +15,9 @@ Gem::Specification.new do |spec|
     and generates playtest reports to help game designers assess balance and gameplay issues.
   DESC
 
-  spec.files         = Dir['lib/**/*.rb', 'rules/**/*']
+  spec.files         = Dir['lib/**/*.rb', 'rules/**/*', 'exe/*', 'docs/**/*.md', 'README.md'] + Dir.glob('templates/**/*', File::FNM_DOTMATCH).reject { |f| File.directory?(f) }
+  spec.bindir        = 'exe'
+  spec.executables   = ['plai_tester']
   spec.require_paths = ['lib']
 
   spec.required_ruby_version = '>= 3.1'

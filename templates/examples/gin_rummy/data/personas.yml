@@ -1,0 +1,13 @@
+basic_strategy:
+- Keep cards that are close to melds (pairs, and two cards of one suit in a row); discard unmatched high cards (face cards count 10) early.
+- Taking the top discard shows your opponent what you are collecting. Watch what they take, and avoid discarding cards that fit it.
+- Every option shows your deadwood after the move. Lower deadwood means a sooner knock and fewer points lost if your opponent knocks first.
+personas:
+  quick_knocker:
+    name: Quick Knocker
+    goal: End hands early. Knock the first time your deadwood is 10 or less, before your opponent can improve.
+    knock_at: 10
+  gin_hunter:
+    name: Gin Hunter
+    goal: Win big. Hold out for gin, or knock only with 3 or less deadwood, to earn the gin bonus and avoid undercuts. Knock sooner once the stock runs low.
+    knock_at: 3

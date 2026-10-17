@@ -30,6 +30,12 @@ RSpec.describe PlaiTester::Game do
     expect(game.sessions_dir).to eq(File.join(games_dir, 'nim', 'sessions'))
   end
 
+  it 'resolves a relative games_dir when it is set, not when it is read' do
+    Dir.chdir(File.dirname(games_dir)) { PlaiTester.games_dir = File.basename(games_dir) }
+
+    expect(PlaiTester.load('nim').name).to eq('nim')
+  end
+
   it 'explains which games exist when asked for an unknown one' do
     expect { PlaiTester.load('nope') }.to raise_error(ArgumentError, /Available: nim/)
   end

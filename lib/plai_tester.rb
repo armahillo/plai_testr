@@ -10,7 +10,7 @@ require 'uri'
 
 module PlaiTester
   class << self
-    attr_writer :sessions_dir, :reports_dir, :rules_dir, :games_dir
+    attr_writer :sessions_dir, :reports_dir, :rules_dir
 
     def sessions_dir
       @sessions_dir || File.join(Dir.pwd, 'sessions')
@@ -26,6 +26,10 @@ module PlaiTester
 
     def games_dir
       @games_dir || File.join(Dir.pwd, 'games')
+    end
+
+    def games_dir=(dir)
+      @games_dir = dir && File.expand_path(dir)
     end
   end
 end
@@ -49,4 +53,5 @@ require_relative 'plai_tester/game'
 require_relative 'plai_tester/deck'
 require_relative 'plai_tester/event_log'
 require_relative 'plai_tester/names'
+require_relative 'plai_tester/generator'
 require_relative 'plai_tester/cli'

@@ -27,14 +27,15 @@ module PlaiTester
           |---|---|
           | **Rules version** | #{@version} |
           | **Games** | #{@results.length} (seeds #{seeds.min}–#{seeds.max})#{", #{@results.length - @played.length} crashed" if @played.length < @results.length} |
-          | **Players** | #{@played.first&.dig('names')&.length || '—'} |
-          | **Personas** | #{@personas ? @personas.join(', ') : 'random per seed'} |
+          | **Players** | #{@played.first&.dig('names')&.length || '—'} |#{"\n| **Personas** | #{@personas ? @personas.join(', ') : 'random per seed'} |" if personas?}
           | **Time** | #{@seconds.round(1)} s (#{(@seconds * 1000 / [@results.length, 1].max).round} ms per game) |
           | **Generated** | #{Time.now.strftime('%Y-%m-%d %H:%M')} |
 
           Every decision was made by the game's bot rules; no model was called. Results describe how the bot plays, so confirm anything surprising with a few model games.
         MD
       end
+
+      def personas? = @personas || @played.any? { |r| r['personas'] }
 
       def endings
         rows = @played.group_by { |r| r['end_reason'] || 'unknown' }.sort_by { |_, list| -list.length }

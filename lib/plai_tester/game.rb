@@ -20,7 +20,7 @@ module PlaiTester
   end
 
   def self.names
-    Dir.children(games_dir).select { |name| File.exist?(File.join(games_dir, name, 'lib', "#{name}.rb")) }.sort
+    Dir.glob('*', base: games_dir).select { |name| File.exist?(File.join(games_dir, name, 'lib', "#{name}.rb")) }.sort
   end
 
   def self.registry

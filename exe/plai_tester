@@ -1,0 +1,5 @@
+#!/usr/bin/env ruby
+
+require 'plai_tester'
+
+PlaiTester::CLI.start(ARGV)

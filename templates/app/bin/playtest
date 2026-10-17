@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# Runs a complete local playtest: checks Ollama, pulls missing models, installs gems,
+# runs the specs, then plays seeded sessions unattended and lists the reports.
+#
+#   bin/playtest <game> [quick|thorough] [--games N] [--seeds 1,2,3] [--players N] [--model qwen3:8b] [--think|--no-think] [--mode llm|hybrid] [--personas A,B] [--referee M] [--skip-tests]
+#   bin/playtest <game> --models qwen3:8b,qwen3:14b --seeds 1,2,3   (same seeds per model, then compare)
+#
+# Modes (explicit --games / --seeds / --model still override them):
+#   quick     qwen3:8b, 1 game         no setup: skips model pulls, gem install and specs; just plays
+#   thorough  qwen3:30b, 1 game,       full setup and specs, then the stronger model, thinking before each choice
+#             thinking                 (several times slower than without thinking)
+#   (none)    qwen3:8b, 3 games
+#
+# --games N plays seeds 1..N; --seeds picks exact seeds instead. --think / --no-think overrides the mode's thinking.
+# --mode hybrid lets the game's bot rules play obvious moves (the model plays the rest). For bot-only games
+# use: bundle exec plai_tester <game> botrun --games 1000
+#
+# --personas pins one named persona per player, for games that define personas (* = random); without it each seed
+# assigns them at random. --players N sets the player count (default: the game's default in rules.json).
+# --referee is only needed for games that ask yes/no rulings.
+#
+# Ctrl+C once finishes the current turn, saves a checkpoint, and prints the resume command.
+# Ctrl+C twice quits immediately (the last completed turn is already saved).
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+GAME=""
+MODE=""
+GAMES=""
+SEEDS=""
+MODEL=""
+MODELS=""
+REFEREE="${PLAITESTER_REFEREE_MODEL:-}"
+PERSONAS=""
+PLAYERS=""
+THINK=""
+PLAY_MODE=""
+RUN_TESTS=1
+SETUP=1
+OLLAMA_URL="http://${PLAITESTER_OLLAMA_HOST:-localhost}:${PLAITESTER_OLLAMA_PORT:-11434}"
+
+usage() {
+  awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
+  exit "${1:-0}"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --games)      GAMES="$2"; shift 2 ;;
+    --seeds)      SEEDS="$2"; shift 2 ;;
+    --model)      MODEL="$2"; shift 2 ;;
+    --models)     MODELS="$2"; shift 2 ;;
+    --referee)    REFEREE="$2"; shift 2 ;;
+    --personas)   PERSONAS="$2"; shift 2 ;;
+    --players)    PLAYERS="$2"; shift 2 ;;
+    --mode)       PLAY_MODE="$2"; shift 2 ;;
+    --think)      THINK=1; shift ;;
+    --no-think)   THINK=0; shift ;;
+    --skip-tests) RUN_TESTS=0; shift ;;
+    -h|--help)    usage 0 ;;
+    -*)           echo "Unknown option: $1" >&2; usage 1 ;;
+    quick|thorough) MODE="$1"; shift ;;
+    *)            GAME="$1"; shift ;;
+  esac
+done
+
+case "$MODE" in
+  quick)    GAMES="${GAMES:-1}"; MODEL="${MODEL:-qwen3:8b}"; SETUP=0 ;;
+  thorough) GAMES="${GAMES:-1}"; MODEL="${MODEL:-qwen3:30b}"; THINK="${THINK:-1}" ;;
+esac
+[[ "${GAMES:-3}" =~ ^[1-9][0-9]*$ ]] || { echo "--games needs a positive number" >&2; exit 1; }
+SEEDS="${SEEDS:-$(seq 1 "${GAMES:-3}" | paste -sd, -)}"
+MODEL="${MODEL:-${PLAITESTER_PLAYER_MODEL:-qwen3:8b}}"
+
+GAME_DIR="$ROOT/games/$GAME"
+
+step() { printf '\n==> %s\n' "$*"; }
+fail() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
+
+[[ -n "$GAME" ]] || { echo "Missing <game> (games: $(ls "$ROOT/games" | tr '\n' ' '))" >&2; usage 1; }
+[[ -f "$GAME_DIR/lib/$GAME.rb" ]] || fail "No game at $GAME_DIR (games: $(ls "$ROOT/games" | tr '\n' ' '))"
+
+[[ -n "$MODE" ]] && step "Mode: $MODE (seeds $SEEDS, model ${MODELS:-$MODEL}$([[ "$THINK" == 1 ]] && echo ', thinking'))"
+
+PLAYER_MODELS="${MODELS:-$MODEL}"
+
+if [[ $SETUP -eq 1 ]]; then
+  step "Checking the Ollama server ($OLLAMA_URL)"
+  command -v ollama > /dev/null || fail "Ollama is not installed. On macOS: brew install ollama"
+  if ! curl -sf "$OLLAMA_URL/api/tags" > /dev/null; then
+    case "$(uname -s)" in
+      Darwin) fail "Ollama is not answering at $OLLAMA_URL. Start it with: brew services start ollama" ;;
+      Linux)  fail "Ollama is not answering at $OLLAMA_URL. Start it with: sudo systemctl start ollama" ;;
+      *)      fail "Ollama is not answering at $OLLAMA_URL. Start it with: ollama serve" ;;
+    esac
+  fi
+  echo "Ollama is up."
+
+  step "Checking models"
+  for model in $(printf '%s\n%s\n' "${PLAYER_MODELS//,/$'\n'}" "$REFEREE" | grep -v '^$' | sort -u); do
+    if ollama list | awk 'NR > 1 { print $1 }' | grep -qx -e "$model" -e "$model:latest"; then
+      echo "$model is installed."
+    else
+      echo "$model is not installed; pulling it now (this can be a multi-GB download)..."
+      ollama pull "$model"
+    fi
+  done
+
+  step "Checking Ruby"
+  (cd "$ROOT" && ruby -v > /dev/null 2>&1) ||
+    fail "The Ruby version in $ROOT/.tool-versions is not installed (asdf: cd $ROOT && asdf install)"
+
+  step "Installing gems"
+  (cd "$ROOT" && bundle install --quiet)
+
+  if [[ $RUN_TESTS -eq 1 ]]; then
+    step "Running specs (a broken harness should not burn hours of model time)"
+    (cd "$ROOT" && bundle exec rspec spec "games/$GAME/spec" --format progress) || fail "$GAME specs failed"
+  fi
+fi
+
+cd "$ROOT"
+STARTED="$(date +%Y%m%d-%H%M%S)"
+for model in ${PLAYER_MODELS//,/ }; do
+  step "Playing $GAME: seeds $SEEDS, players $model$([[ "$THINK" == 1 ]] && echo ' (thinking)')${REFEREE:+, referee $REFEREE}"
+  bundle exec plai_tester "$GAME" batch --seeds "$SEEDS" --model "$model" $([[ "$THINK" == 1 ]] && echo --think) ${PLAY_MODE:+--mode "$PLAY_MODE"} ${REFEREE:+--referee "$REFEREE"} ${PERSONAS:+--personas "$PERSONAS"} ${PLAYERS:+--players "$PLAYERS"}
+done
+
+if [[ -n "$MODELS" ]]; then
+  step "Comparing models"
+  bundle exec plai_tester "$GAME" compare --since "$STARTED"
+fi
+
+step "Done. Reports are in $GAME_DIR/reports/"

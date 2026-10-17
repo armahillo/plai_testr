@@ -3,3 +3,4 @@ sessions/*/
 reports/*.md
 *.lock
 import/*
+pkg/

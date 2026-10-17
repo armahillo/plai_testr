@@ -6,6 +6,7 @@ REFEREE_MODEL = ENV['PLAITESTER_REFEREE_MODEL']
 OLLAMA_HOST   = ENV.fetch('PLAITESTER_OLLAMA_HOST',   'localhost')
 OLLAMA_PORT   = ENV.fetch('PLAITESTER_OLLAMA_PORT',   '11434').to_i
 
+require 'bundler/gem_tasks'
 require 'rspec/core/rake_task'
 RSpec::Core::RakeTask.new(:spec)
 

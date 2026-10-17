@@ -1,0 +1,15 @@
+require 'spec_helper'
+
+RSpec.describe <%= module_name %>::Session::Runner do
+  let(:game)  { PlaiTester.load('<%= name %>') }
+  let(:rules) { PlaiTester::Compiler::RulesLoader.load(game.rules_file) }
+
+  it 'plays whole games with its bot rules' do
+    pending 'implement setup, legal_moves and apply_action_effects'
+
+    results = PlaiTester::Botrun.new(runner_class: described_class, game_state_class: game.game_state_class, rules: rules,
+                                     players: game.players, seeds: (1..10).to_a).run
+
+    expect(results.map { |r| r['error'] }.compact).to be_empty
+  end
+end
