@@ -1,5 +1,20 @@
 module PlaiTester
   class CLI
+    def self.start(argv)
+      $stdout.sync = true
+
+      name = argv.shift
+      abort "Usage: #{File.basename($PROGRAM_NAME)} <game> <command> [options]   (games: #{PlaiTester.names.join(', ')})" if name.nil? || name.start_with?('-')
+
+      game = begin
+        PlaiTester.load(name)
+      rescue ArgumentError => e
+        abort e.message
+      end
+
+      new(game).run(argv)
+    end
+
     def initialize(game, ollama_host: ENV.fetch('PLAITESTER_OLLAMA_HOST', 'localhost'), ollama_port: ENV.fetch('PLAITESTER_OLLAMA_PORT', '11434').to_i)
       @game        = game
       @ollama_host = ollama_host

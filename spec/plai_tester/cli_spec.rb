@@ -53,4 +53,22 @@ RSpec.describe PlaiTester::CLI do
       expect { described_class.new(game).run(%w[start --players 5 --skip-preflight]) }.to raise_error(SystemExit).and output(/5 players is outside 2-4/).to_stderr
     end
   end
+
+  describe '.start' do
+    let(:games_dir) { Dir.mktmpdir('games_') }
+
+    before { PlaiTester.games_dir = games_dir }
+    after do
+      PlaiTester.games_dir = nil
+      FileUtils.rm_rf(games_dir)
+    end
+
+    it 'names the available games when given no game' do
+      expect { described_class.start([]) }.to raise_error(SystemExit).and output(/<game> <command>/).to_stderr
+    end
+
+    it 'refuses an unknown game' do
+      expect { described_class.start(%w[nope list]) }.to raise_error(SystemExit).and output(/Unknown game "nope"/).to_stderr
+    end
+  end
 end
