@@ -1,7 +1,7 @@
 require 'spec_helper'
 
 RSpec.describe GinRummy::Melds do
-  let(:deck) { PlaiTester::Deck.build(PlaiTester::Compiler::RulesLoader.load(PlaiTester.load('gin_rummy').rules_file)) }
+  let(:deck) { PlaiTestr::Deck.build(PlaiTestr.load('gin_rummy').rules) }
 
   def cards(*names) = names.map { |name| deck.find { |c| c['name'] == name } }
   def names(cards)  = cards.map { |c| c['name'] }

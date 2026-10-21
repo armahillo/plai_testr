@@ -1,6 +1,6 @@
 # <%= app_name %>
 
-Automated playtesting for tabletop games with [PlaiTester](https://github.com/armahillo/plai_testr): local LLM players (via [Ollama](https://ollama.com)) and scripted bots play your game, and every session ends in a markdown report.
+Automated playtesting for tabletop games with [PlAI Testr](https://github.com/armahillo/plai_testr): local LLM players (via [Ollama](https://ollama.com)) and scripted bots play your game, and every session ends in a markdown report.
 
 ## Quick start
 
@@ -8,37 +8,36 @@ Automated playtesting for tabletop games with [PlaiTester](https://github.com/ar
 bundle install
 
 # Bots only, no model needed: 100 games in a few seconds, then a report
-bundle exec plai_tester hearts botrun --games 100
+bundle exec plai_testr hearts botrun --games 100
 
-# One game with a local model (needs Ollama running)
-ollama pull qwen3:8b
-bundle exec plai_tester gin_rummy start --seed 1
+# One game with a local model (needs Ollama running; missing models are pulled)
+bundle exec plai_testr gin_rummy play
 ```
 
 Reports go in `games/<game>/reports/`; resumable sessions in `games/<game>/sessions/`.
 
-`bin/playtest <game>` runs a complete unattended playtest: it checks Ollama, pulls missing models, runs the specs, plays seeded games and compares models. Run `bin/playtest --help` for the options.
-
 ## Commands
 
 ```
-bundle exec plai_tester <game> start   [--seed N] [--model M] [--mode llm|hybrid|bot]  One session
-bundle exec plai_tester <game> batch   --seeds 1,2,3 [--model M]                      Several sessions
-bundle exec plai_tester <game> botrun  [--games N]                                     Bots only, many games
-bundle exec plai_tester <game> resume  <session_id>                                    Continue an interrupted session
-bundle exec plai_tester <game> compare [--since ID]                                    Compare models across sessions
-bundle exec plai_tester <game> list                                                    List sessions
-bundle exec plai_tester generate game <name>                                           Add a new game
+bundle exec plai_testr <game> play      [--seed N] [--model M] [--mode llm|hybrid|bot]  One game (random seed 1-100 unless given)
+bundle exec plai_testr <game> botrun    [--games N] [--personas all]                   Bots only, many games
+bundle exec plai_testr <game> resume    <session_id>                                   Continue an interrupted session
+bundle exec plai_testr <game> preflight                                                Check Ollama, pull and warm up models, lint
+bundle exec plai_testr <game> compare   [--since ID]                                   Compare models across sessions
+bundle exec plai_testr <game> list                                                     List sessions
+bundle exec plai_testr generate game <name>                                            Add a new game
 ```
 
-Ctrl+C once finishes the current turn and saves; Ctrl+C twice quits immediately.
+`--quiet` shows only a progress line and the result; `--verbose` shows more. Ctrl+C once saves and stops after the current move (a botrun finishes its current game and reports); Ctrl+C twice quits immediately.
+
+Settings for the whole app (decision limit, model, Ollama host, context size) are in `config/plai_testr.rb`.
 
 ## Layout
 
 ```
 Gemfile
 AGENTS.md                 Guide for AI assistants helping build harnesses (CLAUDE.md points to it)
-bin/playtest              Unattended playtest run
+config/plai_testr.rb      App-wide settings
 spec/spec_helper.rb       Loads every game under games/
 games/
   hearts/                 Example: 4-player trick-taking
@@ -49,10 +48,13 @@ Each game lives entirely in its own directory:
 
 ```
 games/<name>/
-  lib/<name>.rb           Requires the game and registers it with PlaiTester
-  lib/<name>/             Runner (rules engine), bot policy, state classes
+  lib/<name>.rb           Requires the game and registers it with PlaiTestr
+  lib/<name>/bot.rb       Bot rules: how a bot picks moves
+  lib/<name>/             Runner (rules engine), state classes
   data/rules.json         Machine-readable rules: game name, version, player count, card deck
   data/rules.md           Rules text the model players read
+  data/personas.yml       Optional: strategy and play styles for the model players
+  data/bots.yml           Optional: parameters for the bot rules
   NOTES.md                Optional: open rules questions and unconfirmed engine choices
   spec/                   The game's specs
   sessions/ reports/      Output (gitignored)
@@ -75,10 +77,10 @@ Some ways to start:
 ## Adding a game
 
 ```sh
-bundle exec plai_tester generate game my_game
+bundle exec plai_testr generate game my_game
 ```
 
-This creates the skeleton above. Fill in `data/rules.json` and `data/rules.md`, then implement the runner hooks (`setup`, `legal_moves`, `apply_action_effects`) and, optionally, bot rules in `scripted_choice`. The examples show complete games; the [PlaiTester README](https://github.com/armahillo/plai_testr#writing-a-game) lists every hook.
+This creates the skeleton above. Fill in `data/rules.json` and `data/rules.md`, then implement the runner hooks (`setup`, `legal_moves`, `apply_action_effects`) and, optionally, bot rules in `bot_choice`. The examples show complete games; the [PlAI Testr README](https://github.com/armahillo/plai_testr#writing-a-game) lists every hook.
 
 `bundle exec rspec games/my_game` runs its specs. The generated botrun spec stays pending until the game can play itself to the end.
 

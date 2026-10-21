@@ -1,17 +1,17 @@
 module Hearts
   module State
-    class GameState < PlaiTester::State::GameState
-      def step   = @custom['step']
-      def active = @custom['active']
-      def trick  = @custom['trick'] ||= []
-      def taken  = @custom['taken'] ||= {}
+    class GameState < PlaiTestr::State::GameState
+      def step   = @data['step']
+      def active = @data['active']
+      def trick  = @data['trick'] ||= []
+      def taken  = @data['taken'] ||= {}
 
       private
 
-      def custom_for(observer)
-        @custom.except('passes', 'log').merge(
-          'passed' => @custom.fetch('passes', {}).keys,
-          'log'    => PlaiTester::EventLog.new(@custom.fetch('log', [])).visible_to(observer)
+      def data_for(observer)
+        @data.except('passes', 'log').merge(
+          'passed' => @data.fetch('passes', {}).keys,
+          'log'    => PlaiTestr::EventLog.new(@data.fetch('log', [])).visible_to(observer)
         )
       end
     end

@@ -1,10 +1,11 @@
 require 'fileutils'
 require 'tmpdir'
 
-require 'plai_tester'
+require 'plai_testr'
 
-PlaiTester.games_dir = File.expand_path('../games', __dir__)
-PlaiTester.names.each { |name| PlaiTester.load(name) }
+PlaiTestr.load_config(File.expand_path('../config/plai_testr.rb', __dir__))
+PlaiTestr.games_dir = File.expand_path('../games', __dir__)
+PlaiTestr.names.each { |name| PlaiTestr.load(name) }
 
 RSpec.configure do |config|
   config.expect_with :rspec do |expectations|

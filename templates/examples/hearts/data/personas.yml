@@ -1,0 +1,27 @@
+# basic_strategy: shared strategy, injected into each persona with <<: *basics.
+#   complete_tricks: Points come only from tricks you win; count them before you lead.
+#   avoid_penalties: Discard high cards early, while they're hard to punish.
+#
+# personas: play styles, picked with --personas a,b (or at random). The key is
+#   the persona's name; every field under it is shown to the model. To override
+#   a basic_strategy item, reuse its key exactly; a new key adds an item.
+#   moon_shooter:
+#     <<: *basics
+#     avoid_penalties: Keep hearts and the Q♠ if you can take every trick.
+#   safe_player:
+#     <<: *basics
+#     goal: Finish every hand with as few points as you can.
+
+basic_strategy: &basics
+  pass_dangerous: Pass away the Q♠, high spades (A♠, K♠) and high hearts unless you have many low spades to protect them.
+  duck: Play just under the winning card to avoid taking tricks that carry points.
+  dump_when_void: When you cannot follow suit, drop the Q♠ or high hearts on someone else.
+
+personas:
+  safe_player:
+    <<: *basics
+    goal: Take as few points as you can in every hand. Never win a trick you could lose.
+  moon_shooter:
+    <<: *basics
+    goal: Watch for a hand strong enough to take every heart and the Q♠ (26 points to everyone else). Go for it when you can; otherwise play safe.
+    pass_dangerous: Keep high hearts and the Q♠ when your hand is strong enough to take every trick; pass low cards instead.

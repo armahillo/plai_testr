@@ -1,17 +1,17 @@
 module GinRummy
   module State
-    class GameState < PlaiTester::State::GameState
-      def step         = @custom['step']
-      def active       = @custom['active']
-      def stock        = @custom['stock'] ||= []
-      def discard_pile = @custom['discard'] ||= []
+    class GameState < PlaiTestr::State::GameState
+      def step         = @data['step']
+      def active       = @data['active']
+      def stock        = @data['stock'] ||= []
+      def discard_pile = @data['discard'] ||= []
 
       private
 
-      def custom_for(observer)
-        @custom.except('stock', 'log').merge(
+      def data_for(observer)
+        @data.except('stock', 'log').merge(
           'stock_size' => stock.length,
-          'log'        => PlaiTester::EventLog.new(@custom.fetch('log', [])).visible_to(observer)
+          'log'        => PlaiTestr::EventLog.new(@data.fetch('log', [])).visible_to(observer)
         )
       end
     end

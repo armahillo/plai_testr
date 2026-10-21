@@ -1,6 +1,6 @@
 module Hearts
   module Reporter
-    class BotrunReport < PlaiTester::Reporter::BotrunReport
+    class BotrunReport < PlaiTestr::Reporter::BotrunReport
       private
 
       def extra_sections

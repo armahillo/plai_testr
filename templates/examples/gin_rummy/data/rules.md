@@ -36,7 +36,6 @@ The winner of a hand deals the next one. The first player to reach 100 points wi
 - Melds and lay-offs are arranged automatically to give each player the lowest deadwood.
 - There is no special first-turn offer of the upcard; the first player simply draws.
 - No box, line or game bonuses, and no Big Gin.
-- The game stops after 50 hands; the higher score wins.
 
 ## Strategy notes
 

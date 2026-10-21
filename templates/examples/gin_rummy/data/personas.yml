@@ -1,13 +1,26 @@
-basic_strategy:
-- Keep cards that are close to melds (pairs, and two cards of one suit in a row); discard unmatched high cards (face cards count 10) early.
-- Taking the top discard shows your opponent what you are collecting. Watch what they take, and avoid discarding cards that fit it.
-- Every option shows your deadwood after the move. Lower deadwood means a sooner knock and fewer points lost if your opponent knocks first.
+# basic_strategy: shared strategy, injected into each persona with <<: *basics.
+#   complete_tricks: Points come only from tricks you win; count them before you lead.
+#   avoid_penalties: Discard high cards early, while they're hard to punish.
+#
+# personas: play styles, picked with --personas a,b (or at random). The key is
+#   the persona's name; every field under it is shown to the model. To override
+#   a basic_strategy item, reuse its key exactly; a new key adds an item.
+#   moon_shooter:
+#     <<: *basics
+#     avoid_penalties: Keep hearts and the Q♠ if you can take every trick.
+#   safe_player:
+#     <<: *basics
+#     goal: Finish every hand with as few points as you can.
+
+basic_strategy: &basics
+  near_melds: Keep cards that are close to melds (pairs, and two cards of one suit in a row); discard unmatched high cards (face cards count 10) early.
+  watch_discards: Taking the top discard shows your opponent what you are collecting. Watch what they take, and avoid discarding cards that fit it.
+  read_deadwood: Every option shows your deadwood after the move. Lower deadwood means a sooner knock and fewer points lost if your opponent knocks first.
+
 personas:
   quick_knocker:
-    name: Quick Knocker
+    <<: *basics
     goal: End hands early. Knock the first time your deadwood is 10 or less, before your opponent can improve.
-    knock_at: 10
   gin_hunter:
-    name: Gin Hunter
+    <<: *basics
     goal: Win big. Hold out for gin, or knock only with 3 or less deadwood, to earn the gin bonus and avoid undercuts. Knock sooner once the stock runs low.
-    knock_at: 3

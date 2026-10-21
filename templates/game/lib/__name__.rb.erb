@@ -1,7 +1,10 @@
 require_relative '<%= name %>/state/game_state'
-require_relative '<%= name %>/session/policy'
+require_relative '<%= name %>/bot'
 require_relative '<%= name %>/session/runner'
 
-PlaiTester.register('<%= name %>',
-                    runner_class:     <%= module_name %>::Session::Runner,
-                    game_state_class: <%= module_name %>::State::GameState)
+PlaiTestr.register('<%= name %>',
+                   runner_class:     <%= module_name %>::Session::Runner,
+                   game_state_class: <%= module_name %>::State::GameState,
+                   # max_decisions:  5_000,
+                   # model_settings: { context_size: 16_384 },
+                  )

@@ -1,6 +1,6 @@
 # Nested decisions with FrameQueue
 
-Most turns are one decision: the active player picks from a menu. Some games need decisions *inside* other decisions: an attack the defender may block, a card that triggers an opponent's response, an effect that asks someone else to choose. `PlaiTester::Session::FrameQueue` handles these.
+Most turns are one decision: the active player picks from a menu. Some games need decisions *inside* other decisions: an attack the defender may block, a card that triggers an opponent's response, an effect that asks someone else to choose. `PlaiTestr::Session::FrameQueue` handles these.
 
 ## The idea
 
@@ -16,14 +16,14 @@ A **frame** is one pending step: a hash with a `type`, the `player` who decides 
 
 | Method | Purpose |
 |---|---|
-| `frame_queue` | The array that holds the frames, kept in `@game_state.custom` |
+| `frame_queue` | The array that holds the frames, kept in `@game_state.data` |
 | `schedule_frames` | Push the next turn's frame(s) when the stack is empty |
 | `on_<type>(frame, params)` | Resolve a decision frame |
 | `on_<type>(frame)` | Resolve an `auto` frame |
 | `halt_frames?` | Optional. Stop resolving (default: `game_over?`). A good place for end checks and safety caps |
 | `intercept_frame(frame)` | Optional. Return true to stop before a frame and handle it in your own code (e.g. hand maintenance) |
 
-You call `advance_frames` once at the end of `setup`, and `resolve_frame(action['parameters'])` from `apply_action_effects`. `frame_for(type, player, **data)` builds a frame.
+You call `advance_frames` once at the end of `setup`, and `resolve_frame(action.values.first)` from `apply_action_effects`. `frame_for(type, player, **data)` builds a frame. The hooks in the table are public; `advance_frames`, `resolve_frame`, `frame` and `frame_for` are private helpers your runner calls.
 
 ## Example: attack and block
 
@@ -32,31 +32,29 @@ Each turn the attacker plays a card. The defender may block with a card of equal
 ```ruby
 module Strike
   module Session
-    class Runner < PlaiTester::Session::Runner
-      include PlaiTester::Session::FrameQueue
+    class Runner < PlaiTestr::Session::Runner
+      include PlaiTestr::Session::FrameQueue
 
       HAND_SIZE = 4
       KNOCKOUT  = 10
 
-      private
-
       def setup
-        deck = PlaiTester::Deck.build(@rules).shuffle(random: @rng)
+        deck = PlaiTestr::Deck.build(@rules).shuffle(random: @rng)
         players.each { |p| hand(p).concat(deck.shift(HAND_SIZE)) }
-        custom.merge!('queue' => [], 'deck' => deck, 'damage' => players.to_h { |p| [p, 0] }, 'attacker' => players.first)
+        data.merge!('queue' => [], 'deck' => deck, 'damage' => players.to_h { |p| [p, 0] }, 'attacker' => players.first)
         advance_frames
       end
 
-      def frame_queue = custom['queue']
+      def frame_queue = data['queue']
 
       def schedule_frames
-        attacker = custom['attacker']
-        hand(attacker).concat(custom['deck'].shift(HAND_SIZE - hand(attacker).length))
+        attacker = data['attacker']
+        hand(attacker).concat(data['deck'].shift(HAND_SIZE - hand(attacker).length))
         frame_queue.push(frame_for('attack', attacker))
       end
 
       def halt_frames?
-        end_game(nil, 'deck_empty') if !game_over? && custom['deck'].empty? && hand(custom['attacker']).empty?
+        end_game(nil, 'deck_empty') if !game_over? && data['deck'].empty? && hand(data['attacker']).empty?
         game_over?
       end
 
@@ -65,44 +63,43 @@ module Strike
       def legal_moves(player)
         case frame['type']
         when 'attack'
-          hand(player).map { |c| move("Attack with #{c['name']}", 'uid' => c['uid']) }
+          hand(player).map { |c| option("Attack with #{c['name']}", attack: { value: c['uid'] }) }
         when 'block'
           blockers = hand(player).select { |c| c['value'] >= frame['value'] }
-          blockers.map { |c| move("Block with #{c['name']}", 'uid' => c['uid']) } + [move("Take #{frame['value']} damage", {})]
+          blockers.map { |c| option("Block with #{c['name']}", block: { value: c['uid'] }) } + [option("Take #{frame['value']} damage", block: {})]
         end
       end
 
-      def move(label, parameters) = { 'label' => label, 'action' => { 'action' => frame['type'], 'parameters' => parameters } }
+      def apply_action_effects(_player, action) = resolve_frame(action.values.first)
 
-      def apply_action_effects(_player, action) = resolve_frame(action['parameters'])
+      private
 
       def on_attack(frame, params)
-        card     = take(frame['player'], params['uid'])
+        card     = take(frame['player'], params[:value])
         defender = opponent(frame['player'])
         frame_queue.push(frame_for('block', defender, value: card['value']))
       end
 
       def on_block(frame, params)
-        if params['uid']
-          take(frame['player'], params['uid'])
+        if params[:value]
+          take(frame['player'], params[:value])
         else
           frame_queue.push(frame_for('damage', frame['player'], auto: true, amount: frame['value']))
         end
-        custom['attacker'] = frame['player']
+        data['attacker'] = frame['player']
       end
 
       def on_damage(frame)
-        custom['damage'][frame['player']] += frame['amount']
-        end_game(opponent(frame['player']), 'knockout') if custom['damage'][frame['player']] >= KNOCKOUT
+        data['damage'][frame['player']] += frame['amount']
+        end_game(opponent(frame['player']), 'knockout') if data['damage'][frame['player']] >= KNOCKOUT
       end
 
       def end_game(winner, reason)
-        @game_state.apply_changes('flags' => { 'game_over' => true, 'winner' => winner, 'end_reason' => reason })
+        @game_state.apply_changes('status' => { 'game_over' => true, 'winner' => winner, 'end_reason' => reason })
       end
 
       def take(player, uid) = hand(player).delete_at(hand(player).index { |c| c['uid'] == uid })
       def opponent(player)  = (players - [player]).first
-      def custom            = @game_state.custom
       def players           = @game_state.players
       def hand(player)      = @game_state.player_state(player).hand
     end
@@ -122,5 +119,5 @@ The sequence for one exchange:
 - **Stack order.** To have A happen before B, push B first, then A.
 - **Pick-N frames.** Put `pick: [min, max]` on the frame and return `frame['pick']` from `pick_range`.
 - **Say what the frame is for.** `turn_phase` can return `frame['type']`, and views should say why the player is deciding ("Player 1 attacks with Blade 5: block or take 5 damage").
-- **Cap runaway loops in `halt_frames?`.** Count resolved frames and end the game past a limit the players never see.
+- **Cap runaway auto-frame loops in `halt_frames?`.** The decision limit (`max_decisions`) counts only decisions, so a loop of `auto` frames never reaches it. Count resolved frames and end the game past a limit the players never see.
 - **Bot rules** read `frame['type']` the same way `legal_moves` does.

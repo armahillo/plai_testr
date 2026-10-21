@@ -1,0 +1,16 @@
+# basic_strategy: shared strategy, injected into each persona with <<: *basics.
+#   complete_tricks: Points come only from tricks you win; count them before you lead.
+#   avoid_penalties: Discard high cards early, while they're hard to punish.
+#
+# personas: play styles, picked with --personas a,b (or at random). The key is
+#   the persona's name; every field under it is shown to the model. To override
+#   a basic_strategy item, reuse its key exactly; a new key adds an item.
+#   moon_shooter:
+#     <<: *basics
+#     avoid_penalties: Keep hearts and the Q♠ if you can take every trick.
+#   safe_player:
+#     <<: *basics
+#     goal: Finish every hand with as few points as you can.
+
+basic_strategy: &basics {}
+personas: {}

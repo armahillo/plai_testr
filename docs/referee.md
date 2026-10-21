@@ -4,7 +4,7 @@ Prefer encoding rules in Ruby: it is fast, deterministic and testable. Some cond
 
 ## How it works
 
-Run with `--referee <model>` (or set `PLAITESTER_REFEREE_MODEL`). The runner then has `@referee`, an `Agents::RefereeAgent`; without the option, `@referee` is `nil`.
+Run with `--referee <model>` (or set `PLAI_TESTR_REFEREE_MODEL`). The runner then has `@referee`, an `Agents::RefereeAgent`; without the option, `@referee` is `nil`.
 
 ```ruby
 @referee.ruling(question: 'Is the condition on Ambush met?', facts: "...")
@@ -23,7 +23,7 @@ Cards in `rules.json` carry their condition as text:
 { "name": "Ambush", "value": 2, "condition": "your opponent has more points than you", "bonus": 3, "copies": 2 }
 ```
 
-When a card with a condition is played, the runner asks for a ruling and records it (`custom` and `log` are the helpers the example games define):
+When a card with a condition is played, the runner asks for a ruling and records it (`data` and `log` are runner helpers):
 
 ```ruby
 def bonus_for(player, card)
@@ -39,13 +39,13 @@ def ruling(question, facts)
            else
              { 'met' => false, 'why' => 'no referee: run with --referee to rule on conditions', 'fallback' => true }
            end
-  (custom['rulings'] ||= []) << result.merge('turn' => @game_state.turn + 1, 'question' => question)
+  (data['rulings'] ||= []) << result.merge('turn' => @game_state.turn + 1, 'question' => question)
   log("Ruling: #{question} #{result['met'] ? 'Yes' : 'No'} (#{result['why']})")
   result
 end
 
 def report_sections
-  rows = custom.fetch('rulings', []).map { |r| "| #{r['turn']} | #{r['question']} | #{r['met'] ? 'yes' : 'no'} | #{r['why']}#{' (fallback)' if r['fallback']} |" }
+  rows = data.fetch('rulings', []).map { |r| "| #{r['turn']} | #{r['question']} | #{r['met'] ? 'yes' : 'no'} | #{r['why']}#{' (fallback)' if r['fallback']} |" }
   ["## Rulings\n\n| Turn | Question | Met | Why |\n|---|---|---|---|\n#{rows.join("\n")}"]
 end
 ```

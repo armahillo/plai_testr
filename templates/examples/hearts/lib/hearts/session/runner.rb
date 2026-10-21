@@ -1,7 +1,7 @@
 module Hearts
   module Session
-    class Runner < PlaiTester::Session::Runner
-      include Policy
+    class Runner < PlaiTestr::Session::Runner
+      include Bot
 
       RULES_PATH = File.expand_path('../../../data/rules.md', __dir__)
       RECENT_LOG = 12
@@ -12,12 +12,10 @@ module Hearts
         'Which choices felt automatic (the choice did not matter)?'
       ].freeze
 
-      private
-
       def setup
-        custom.merge!('hand' => 0, 'log' => [], 'taken_total' => %w[hearts queen moons].to_h { |key| [key, players.to_h { |p| [p, 0] }] })
+        data.merge!('hand' => 0, 'log' => [], 'taken_total' => %w[hearts queen moons].to_h { |key| [key, players.to_h { |p| [p, 0] }] })
         deal
-        puts "  Setup (seed #{@seed}): #{players.length} players; the game ends at #{limit} points."
+        out.puts "  Setup (seed #{@seed}): #{players.length} players; the game ends at #{limit} points."
       end
 
       def next_player = @game_state.active
@@ -25,60 +23,94 @@ module Hearts
       def legal_moves(player)
         case step
         when 'pass'
-          hand(player).map { |card| move("Pass #{card['name']}", 'pass', card) }
+          hand(player).map { |card| option("Pass #{card['name']}", pass: { value: card['uid'] }) }
         when 'play'
           playable(player).map do |card|
-            move("Play #{card['name']}#{" (#{pts(Hearts.points(card))})" if Hearts.points(card).positive?}", 'play', card, public: "played #{card['name']}")
+            option("Play #{card['name']}#{" (#{pts(Hearts.points(card))})" if Hearts.points(card).positive?}", public: "played #{card['name']}",
+                   play: { value: card['uid'] })
           end
         end
       end
 
       def pick_range(_player) = step == 'pass' ? [PASS_COUNT, PASS_COUNT] : nil
 
-      def move(label, action, card, public: nil)
-        { 'label' => label, 'public' => public, 'action' => { 'action' => action, 'parameters' => { 'value' => card['uid'] } } }.compact
-      end
-
       def apply_action_effects(player, action)
-        params = action['parameters']
-
-        case action['action']
-        when 'pass' then pass(player, params['values'])
-        when 'play' then play(player, params['value'])
+        case action
+        in { pass: { value: uids } } then pass(player, uids)
+        in { play: { value: uid } }  then play(player, uid)
         end
       end
 
+      def rules_text_for(_player) = @rules_text ||= File.read(RULES_PATH)
+
+      def view_text_for(player)
+        [
+          "Hand #{data['hand']}. Scores (lower is better; the game ends at #{limit}): #{per_player(player) { |p| pstate(p).score }}",
+          ("Points taken this hand: #{per_player(player) { |p| points_in(taken[p]) }}. Hearts broken: #{data['hearts_broken'] ? 'yes' : 'no'}." if step == 'play'),
+          ("Current trick: #{trick_text(player)}" if step == 'play'),
+          "Your hand: #{list(hand(player))}",
+          '',
+          instruction(player)
+        ].compact.join("\n")
+      end
+
+      def turn_phase(_player)
+        step == 'pass' ? "hand #{data['hand']} · pass #{data['pass']}" : "hand #{data['hand']} · trick #{data['tricks'] + 1}"
+      end
+
+      def report_sections
+        rows = players.map { |p| "| #{p} | #{pstate(p).score} | #{totals['hearts'][p]} | #{totals['queen'][p]} | #{totals['moons'][p]} |" }
+
+        [<<~MD.strip]
+          ## Hearts
+
+          #{data['hand']} hands played.
+
+          | Player | Score | Hearts taken | Q♠ taken | Moons shot |
+          |---|---|---|---|---|
+          #{rows.join("\n")}
+        MD
+      end
+
+      def botrun_stats = { 'hands' => data['hand'], 'taken' => totals }
+
+      def recent_events_for(player) = event_log.recent_for(player, RECENT_LOG)
+
+      def debrief_questions(_player) = DEBRIEF_QUESTIONS
+
+      private
+
       def deal
-        deck   = PlaiTester::Deck.build(@rules).shuffle(random: @rng)
-        number = custom['hand'] + 1
+        deck   = PlaiTestr::Deck.build(@rules).shuffle(random: @rng)
+        number = data['hand'] + 1
 
         players.each { |p| hand(p).replace(sorted(deck.shift(HAND_SIZE))) }
-        custom.merge!('hand' => number, 'pass' => PASSES[(number - 1) % PASSES.length], 'passes' => {},
-                      'taken' => players.to_h { |p| [p, []] }, 'trick' => [], 'tricks' => 0, 'hearts_broken' => false)
-        log("Hand #{number} dealt: pass #{custom['pass']}")
+        data.merge!('hand' => number, 'pass' => PASSES[(number - 1) % PASSES.length], 'passes' => {},
+                    'taken' => players.to_h { |p| [p, []] }, 'trick' => [], 'tricks' => 0, 'hearts_broken' => false)
+        log("Hand #{number} dealt: pass #{data['pass']}")
 
-        if custom['pass'] == 'hold'
+        if data['pass'] == 'hold'
           start_tricks
         else
-          custom.merge!('step' => 'pass', 'active' => players.first)
+          data.merge!('step' => 'pass', 'active' => players.first)
         end
       end
 
       def pass(player, uids)
-        custom['passes'][player] = uids
+        data['passes'][player] = uids
 
-        if custom['passes'].length == players.length
+        if data['passes'].length == players.length
           exchange
         else
-          custom['active'] = seat(player, 1)
+          data['active'] = seat(player, 1)
         end
       end
 
       def exchange
-        given = custom['passes'].to_h { |giver, uids| [giver, uids.map { |uid| take(giver, uid) }] }
+        given = data['passes'].to_h { |giver, uids| [giver, uids.map { |uid| take(giver, uid) }] }
 
         given.each do |giver, cards|
-          receiver = seat(giver, SEAT_SHIFT.fetch(custom['pass']))
+          receiver = seat(giver, SEAT_SHIFT.fetch(data['pass']))
           hand(receiver).replace(sorted(hand(receiver) + cards))
           log("You passed #{list(cards)} to #{receiver}", to: giver)
           log("#{giver} passed you #{list(cards)}", to: receiver)
@@ -87,19 +119,19 @@ module Hearts
       end
 
       def start_tricks
-        custom.merge!('step' => 'play', 'active' => players.find { |p| hand(p).any? { |c| c['name'] == OPENER } })
+        data.merge!('step' => 'play', 'active' => players.find { |p| hand(p).any? { |c| c['name'] == OPENER } })
       end
 
       def play(player, uid)
         card = take(player, uid)
         trick << { 'player' => player, 'card' => card }
-        custom['hearts_broken'] ||= card['suit'] == 'hearts'
+        data['hearts_broken'] ||= card['suit'] == 'hearts'
         log("#{player} played #{card['name']}")
 
         if trick.length == players.length
           finish_trick
         else
-          custom['active'] = seat(player, 1)
+          data['active'] = seat(player, 1)
         end
       end
 
@@ -109,8 +141,8 @@ module Hearts
 
         taken[winner].concat(cards)
         log("#{winner} took the trick (#{list(cards)})#{" for #{pts(points_in(cards))}" if points_in(cards).positive?}")
-        custom.merge!('trick' => [], 'tricks' => custom['tricks'] + 1, 'active' => winner)
-        score_hand if custom['tricks'] == HAND_SIZE
+        data.merge!('trick' => [], 'tricks' => data['tricks'] + 1, 'active' => winner)
+        score_hand if data['tricks'] == HAND_SIZE
       end
 
       def score_hand
@@ -124,7 +156,7 @@ module Hearts
           totals['queen'][p]  += 1 if taken[p].any? { |c| c['name'] == QUEEN }
         end
         totals['moons'][shooter] += 1 if shooter
-        log("Hand #{custom['hand']} scored: #{players.map { |p| "#{p} +#{points[p]}" }.join(', ')}#{" (#{shooter} shot the moon)" if shooter}")
+        log("Hand #{data['hand']} scored: #{players.map { |p| "#{p} +#{points[p]}" }.join(', ')}#{" (#{shooter} shot the moon)" if shooter}")
 
         players.any? { |p| pstate(p).score >= limit } ? end_game : deal
       end
@@ -133,15 +165,15 @@ module Hearts
         low     = players.map { |p| pstate(p).score }.min
         winners = players.select { |p| pstate(p).score == low }
 
-        @game_state.apply_changes('flags' => { 'game_over' => true, 'winner' => winners.join(' & '),
-                                               'end_reason' => winners.one? ? 'fewest_points' : 'tied_for_fewest_points' })
+        @game_state.apply_changes('status' => { 'game_over' => true, 'winner' => winners.join(' & '),
+                                                'end_reason' => winners.one? ? 'fewest_points' : 'tied_for_fewest_points' })
       end
 
       def playable(player)
         cards = hand(player)
 
         if trick.empty?
-          custom['tricks'].zero? ? cards.select { |c| c['name'] == OPENER } : leads(cards)
+          data['tricks'].zero? ? cards.select { |c| c['name'] == OPENER } : leads(cards)
         else
           follows(cards)
         end
@@ -149,7 +181,7 @@ module Hearts
 
       def leads(cards)
         safe = cards.reject { |c| c['suit'] == 'hearts' }
-        custom['hearts_broken'] || safe.empty? ? cards : safe
+        data['hearts_broken'] || safe.empty? ? cards : safe
       end
 
       def follows(cards)
@@ -157,22 +189,9 @@ module Hearts
         clean  = cards.select { |c| Hearts.points(c).zero? }
 
         if suited.any? then suited
-        elsif custom['tricks'].zero? && clean.any? then clean
+        elsif data['tricks'].zero? && clean.any? then clean
         else cards
         end
-      end
-
-      def rules_text_for(_player) = @rules_text ||= File.read(RULES_PATH)
-
-      def view_text_for(player)
-        [
-          "Hand #{custom['hand']}. Scores (lower is better; the game ends at #{limit}): #{per_player(player) { |p| pstate(p).score }}",
-          ("Points taken this hand: #{per_player(player) { |p| points_in(taken[p]) }}. Hearts broken: #{custom['hearts_broken'] ? 'yes' : 'no'}." if step == 'play'),
-          ("Current trick: #{trick_text(player)}" if step == 'play'),
-          "Your hand: #{list(hand(player))}",
-          '',
-          instruction(player)
-        ].compact.join("\n")
       end
 
       def trick_text(player)
@@ -183,34 +202,20 @@ module Hearts
 
       def instruction(player)
         case step
-        when 'pass' then "Choose #{PASS_COUNT} cards to pass #{custom['pass']} to #{seat(player, SEAT_SHIFT.fetch(custom['pass']))}."
-        when 'play' then trick.empty? ? 'Lead a card to start the trick.' : "Play a card. You must follow #{led_suit} if you can."
+        when 'pass' then "Choose #{PASS_COUNT} cards to pass #{data['pass']} to #{seat(player, SEAT_SHIFT.fetch(data['pass']))}."
+        when 'play' then play_instruction(player)
         end
       end
 
-      def turn_phase(_player)
-        step == 'pass' ? "hand #{custom['hand']} · pass #{custom['pass']}" : "hand #{custom['hand']} · trick #{custom['tricks'] + 1}"
+      def play_instruction(player)
+        if trick.empty?
+          "You lead this trick.#{' Hearts are not broken, so you may not lead a heart unless you have only hearts.' unless data['hearts_broken']}"
+        elsif hand(player).any? { |c| c['suit'] == led_suit }
+          "You are following, not leading: you must play one of your #{led_suit}."
+        else
+          "You are following, not leading. You have no #{led_suit}, so you may play any card#{', but not a heart or the Q♠ unless you have nothing else' if data['tricks'].zero?}."
+        end
       end
-
-      def report_sections
-        rows = players.map { |p| "| #{p} | #{pstate(p).score} | #{totals['hearts'][p]} | #{totals['queen'][p]} | #{totals['moons'][p]} |" }
-
-        [<<~MD.strip]
-          ## Hearts
-
-          #{custom['hand']} hands played.
-
-          | Player | Score | Hearts taken | Q♠ taken | Moons shot |
-          |---|---|---|---|---|
-          #{rows.join("\n")}
-        MD
-      end
-
-      def botrun_stats = { 'hands' => custom['hand'], 'taken' => totals }
-
-      def recent_events_for(player) = event_log.recent_for(player, RECENT_LOG)
-
-      def debrief_questions(_player) = DEBRIEF_QUESTIONS
 
       def take(player, uid) = hand(player).delete_at(hand(player).index { |c| c['uid'] == uid })
 
@@ -222,20 +227,15 @@ module Hearts
 
       def whose(player, viewer) = player == viewer ? 'You' : player
 
-      def log(text, to: nil) = event_log.add(text, turn: custom['hand'], to: to)
-
-      def event_log = PlaiTester::EventLog.new(custom['log'])
-
       def points_in(cards) = cards.sum { |c| Hearts.points(c) }
       def list(cards)      = cards.map { |c| c['name'] }.join(', ')
       def pts(points)      = points == 1 ? '1 pt' : "#{points} pts"
       def led_suit         = trick.first['card']['suit']
       def limit            = @rules.fetch('points_to_end')
-      def custom           = @game_state.custom
       def step             = @game_state.step
       def trick            = @game_state.trick
       def taken            = @game_state.taken
-      def totals           = custom['taken_total']
+      def totals           = data['taken_total']
       def players          = @game_state.players
       def pstate(player)   = @game_state.player_state(player)
       def hand(player)     = pstate(player).hand

@@ -1,0 +1,18 @@
+# bot_strategy: parameters your bot (lib/<game>/bot.rb) reads (never shown to the model).
+#   Read them in bot_choice with bot_strategy_for(player).
+#   knock_at: 10
+#   lead_low: true
+#
+# bots: per-persona overrides, keyed by the persona's key in personas.yml.
+#   A key with no matching persona is an error.
+#   gin_hunter:
+#     <<: *bot_defaults
+#     knock_at: 3
+
+bot_strategy: &bot_defaults
+  knock_at: 10
+
+bots:
+  gin_hunter:
+    <<: *bot_defaults
+    knock_at: 3

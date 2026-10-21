@@ -1,10 +1,10 @@
 module <%= module_name %>
   module State
-    class GameState < PlaiTester::State::GameState
+    class GameState < PlaiTestr::State::GameState
       private
 
-      def custom_for(observer)
-        @custom.except('log').merge('log' => PlaiTester::EventLog.new(@custom.fetch('log', [])).visible_to(observer))
+      def data_for(observer)
+        @data.except('log').merge('log' => PlaiTestr::EventLog.new(@data.fetch('log', [])).visible_to(observer))
       end
     end
   end
