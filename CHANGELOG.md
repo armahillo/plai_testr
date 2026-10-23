@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.1 (2026-10-23)
+
+- Author name in the gemspec and license.
+
+## 0.1.0 (2026-10-23, yanked)
 
 First public release.
 

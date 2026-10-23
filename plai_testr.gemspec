@@ -3,7 +3,7 @@ require_relative 'lib/plai_testr/version'
 Gem::Specification.new do |spec|
   spec.name     = 'plai_testr'
   spec.version  = PlaiTestr::VERSION
-  spec.authors  = ['Aaron Hill']
+  spec.authors  = ['Aaron H']
   spec.email    = ['armahillo@gmail.com']
   spec.summary  = 'Automated tabletop game playtesting using local LLM agents'
   spec.license  = 'MIT'
