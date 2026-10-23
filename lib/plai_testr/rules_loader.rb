@@ -1,6 +1,12 @@
 module PlaiTestr
   class RulesLoader
     def self.load(path)
+      (@cache ||= {})[[File.expand_path(path), File.mtime(path)]] ||= parse(path)
+    rescue Errno::ENOENT
+      raise RulesError, "Rules file not found: #{path}"
+    end
+
+    def self.parse(path)
       rules  = JSON.parse(File.read(path))
       errors = validate(rules)
       raise RulesError, "Invalid rules file #{path}:\n#{errors.map { |e| "  - #{e}" }.join("\n")}" unless errors.empty?

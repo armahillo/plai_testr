@@ -47,6 +47,12 @@ RSpec.describe PlaiTestr::CLI do
     expect { described_class.new(game).run(%w[play --personas a,b --skip-preflight]) }.to raise_error(PlaiTestr::PersonaError, /no personas/)
   end
 
+  it 'exits with status 130 when the game was interrupted, so scripts can stop' do
+    allow(runner).to receive(:status).and_return('interrupted')
+
+    expect { described_class.new(game).run(%w[play --skip-preflight]) }.to raise_error(SystemExit) { |e| expect(e.status).to eq(130) }
+  end
+
   it 'resumes through the runner class' do
     allow(runner).to receive(:data).and_return('mode' => 'bot')
     expect(runner_class).to receive(:resume).with(game, 'abc', out: $stdout, verbose: nil).and_return(runner)

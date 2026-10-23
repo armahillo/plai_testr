@@ -5,3 +5,4 @@ reports/*.md
 import/*
 pkg/
 .claude/history/
+.claude/settings.local.json

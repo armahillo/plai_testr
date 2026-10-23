@@ -23,11 +23,11 @@ module Hearts
       def legal_moves(player)
         case step
         when 'pass'
-          hand(player).map { |card| option("Pass #{card['name']}", pass: { value: card['uid'] }) }
+          hand(player).map { |card| option("Pass #{card['name']}#{" (#{pts(Hearts.points(card))})" if Hearts.points(card).positive?}", pass: { value: card['uid'] }) }
         when 'play'
           playable(player).map do |card|
-            option("Play #{card['name']}#{" (#{pts(Hearts.points(card))})" if Hearts.points(card).positive?}", public: "played #{card['name']}",
-                   play: { value: card['uid'] })
+            facts = [(pts(Hearts.points(card)) if Hearts.points(card).positive?), (outcome(card) unless trick.empty?)].compact
+            option("Play #{card['name']}#{" (#{facts.join('; ')})" if facts.any?}", public: "played #{card['name']}", play: { value: card['uid'] })
           end
         end
       end
@@ -197,7 +197,18 @@ module Hearts
       def trick_text(player)
         return 'none yet (you lead)' if trick.empty?
 
-        "#{trick.map { |t| "#{whose(t['player'], player)}: #{t['card']['name']}" }.join(', ')} (#{led_suit} led)"
+        points = points_in(trick.map { |t| t['card'] })
+        "#{trick.map { |t| "#{whose(t['player'], player)}: #{t['card']['name']}" }.join(', ')} (#{led_suit} led; #{points.zero? ? 'no points' : pts(points)} in it so far)"
+      end
+
+      def outcome(card)
+        best = trick.map { |t| t['card'] }.select { |c| c['suit'] == led_suit }.max_by { |c| c['rank'] }
+
+        if card['suit'] != led_suit then 'cannot win this trick'
+        elsif card['rank'] < best['rank'] then "stays under the #{best['name']}"
+        elsif last_to_play? then 'wins the trick'
+        else 'wins the trick so far'
+        end
       end
 
       def instruction(player)

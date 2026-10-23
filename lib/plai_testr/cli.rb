@@ -137,10 +137,11 @@ module PlaiTestr
     def play_session(runner)
       started = clock
       runner.run { |decisions| progress("decision #{decisions} · #{duration(clock - started)}", decisions) if @options[:quiet] }
-      return unless @options[:quiet]
-
-      puts
-      puts runner.status == 'completed' ? "Game complete (seed #{runner.seed}). Report: #{runner.report_path}" : "Saved. Resume with: plai_testr #{@game.name} resume #{runner.session_id}"
+      if @options[:quiet]
+        puts
+        puts runner.status == 'completed' ? "Game complete (seed #{runner.seed}). Report: #{runner.report_path}" : "Saved. Resume with: plai_testr #{@game.name} resume #{runner.session_id}"
+      end
+      exit 130 if runner.status == 'interrupted'
     end
 
     def botrun

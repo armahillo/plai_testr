@@ -1,4 +1,4 @@
-# PLAI_TESTR
+# PlAI Testr
 
 PlAI Testr is a Ruby gem for playtesting tabletop games with local LLM players (Ollama) and scripted bots. A game lists its legal moves as a numbered menu; a model or bot picks one; the gem applies it, checkpoints, and writes markdown reports.
 
@@ -43,11 +43,9 @@ spec/                           Gem specs; spec/support/test_game.rb builds a th
 - Raise `PlaiTestr::Error` subclasses (`RulesError`, `PersonaError`, `SessionError`, `ModelError`, `UsageError`, `MoveError`) for anything a user can cause. The CLI prints their message; `PLAI_TESTR_DEBUG=1` shows the backtrace.
 - Output goes through `out` (an IO passed in), never bare `puts` or a swapped `$stdout`, so botruns and specs can silence it.
 - Randomness in games comes from `@rng`, reseeded per decision from the seed and decision number. Don't add other sources of randomness to the decision path.
-- `../game-testrs` is a separate app that uses this gem through a path gem; check it when changing the public API.
 - Bump `lib/plai_testr/version.rb` and add a `CHANGELOG.md` entry for releases. A changed version invalidates saved sessions (resume compares a fingerprint that includes it).
 
 ## Conventions
 
-- Ruby 3.2+. Keep code readable for people who don't know Ruby: plain hashes with string keys for game data, no metaprogramming in the game-facing API.
+- Ruby 3.4+. Keep code readable for people who don't know Ruby: plain hashes with string keys for game data (state, rules), symbol keys for moves and actions (so games can pattern-match them), no metaprogramming in the game-facing API.
 - Specs test public behaviour; build runners with `build_game` from `spec/support/test_game.rb`.
-- Don't commit; the maintainer handles git.

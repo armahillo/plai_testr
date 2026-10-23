@@ -6,7 +6,7 @@ Your game lists the legal moves each turn as a numbered menu; a model (or a scri
 
 ## Requirements
 
-- Ruby 3.2+
+- Ruby 3.4+
 - [Ollama](https://ollama.com), local or on your network (not needed for bot-only runs)
 
 ## Quick start
@@ -83,7 +83,7 @@ A game subclasses `PlaiTestr::Session::Runner`. These hooks are its public API (
 | `report_sections`, `report_debrief?` | | Extra report sections; false to render the debrief yourself |
 | `botrun_stats` | | Game-specific numbers for one botrun game |
 
-Helpers for hooks: `option`, `menu(player)` (the menu as the runner sees it), `data`, `log(text, to: nil)`, `event_log`, `persona(player)`, `bot_strategy_for(player)`, `@rng`, `@rules`, `@game_state`, `out`. Specs drive a runner with `setup`, `play_turn`, `play_out` and the hooks above.
+Helpers for hooks: `option`, `menu(player)` (the menu as the runner sees it), `data`, `log(text, to: nil, turn: decision)`, `event_log`, `persona(player)`, `persona_name(player)`, `bot_strategy_for(player)`, `@rng`, `@rules`, `@game_state`, `out`. Specs drive a runner with `setup`, `play_turn`, `play_out` and the hooks above.
 
 ### Moves
 

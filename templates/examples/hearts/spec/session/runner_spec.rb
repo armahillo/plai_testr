@@ -43,11 +43,11 @@ RSpec.describe Hearts::Session::Runner do
       expect(labels('Player 1')).to eq(['Play 9♣'])
     end
 
-    it 'follows the suit led when it can' do
-      give('Player 2', '5♥', '9♣', 'K♣')
-      state.data['trick'] = [{ 'player' => 'Player 1', 'card' => cards('2♣').first }]
+    it 'follows the suit led when it can, and says whether each card wins the trick' do
+      give('Player 2', '5♥', '7♣', 'K♣')
+      state.data['trick'] = [{ 'player' => 'Player 1', 'card' => cards('9♣').first }]
 
-      expect(labels('Player 2')).to eq(['Play 9♣', 'Play K♣'])
+      expect(labels('Player 2')).to eq(['Play 7♣ (stays under the 9♣)', 'Play K♣ (wins the trick so far)'])
     end
 
     it 'tells a player who cannot follow suit that any card is allowed' do
@@ -55,13 +55,14 @@ RSpec.describe Hearts::Session::Runner do
       state.data.merge!('trick' => [{ 'player' => 'Player 1', 'card' => cards('2♣').first }], 'active' => 'Player 2')
 
       expect(runner.view_text_for('Player 2')).to end_with('You are following, not leading. You have no clubs, so you may play any card.')
+      expect(labels('Player 2')).to eq(['Play Q♠ (13 pts; cannot win this trick)', 'Play 5♥ (1 pt; cannot win this trick)'])
     end
 
     it 'keeps points off the first trick unless there is nothing else' do
       state.data.merge!('tricks' => 0, 'trick' => [{ 'player' => 'Player 1', 'card' => cards('2♣').first }])
       give('Player 2', 'Q♠', '5♥', '9♦')
 
-      expect(labels('Player 2')).to eq(['Play 9♦'])
+      expect(labels('Player 2')).to eq(['Play 9♦ (cannot win this trick)'])
     end
   end
 
@@ -92,7 +93,7 @@ RSpec.describe Hearts::Session::Runner do
       state.data['personas']['Player 1'] = 'moon_shooter'
       moon  = runner.bot_choice('Player 1', moves, pick: [2, 2])
 
-      expect(safe['choices'].map { |i| moves[i - 1][:label] }).to contain_exactly('Pass Q♠', 'Pass A♥')
+      expect(safe['choices'].map { |i| moves[i - 1][:label] }).to contain_exactly('Pass Q♠ (13 pts)', 'Pass A♥ (1 pt)')
       expect(moon['choices'].map { |i| moves[i - 1][:label] }).to contain_exactly('Pass 2♣', 'Pass 3♦')
     end
   end

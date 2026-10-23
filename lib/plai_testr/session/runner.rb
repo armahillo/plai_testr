@@ -129,15 +129,17 @@ module PlaiTestr
 
       def data = @game_state.data
 
-      def log(text, to: nil)
+      def log(text, to: nil, turn: decision)
         player, decider = @acting
         tag = decider unless decider == 'LLM'
-        event_log.add(text, turn: decision, to: to, actor: player, tag: tag)
+        event_log.add(text, turn: turn, to: to, actor: player, tag: tag)
       end
 
       def event_log = EventLog.new(data['log'] ||= [])
 
       def persona(player) = data.dig('personas', player)
+
+      def persona_name(player) = persona(player)&.then { |key| @personas.name(key) }
 
       def bot_strategy_for(player) = @personas.bot(persona(player))
 
@@ -182,14 +184,13 @@ module PlaiTestr
       def persona_for(player_name)
         key = persona(player_name) or return nil
 
-        "#{@personas.name(key)}\n#{@personas.strategy(key).map { |item| "- #{item}" }.join("\n")}"
+        "#{persona_name(player_name)}\n#{@personas.strategy(key).map { |item| "- #{item}" }.join("\n")}"
       end
 
       def display_name(player_name)
         key = persona(player_name) or return player_name
-        name = @personas.name(key)
 
-        data['personas'].values.count(key) > 1 ? "#{name} (#{player_name})" : name
+        data['personas'].values.count(key) > 1 ? "#{persona_name(player_name)} (#{player_name})" : persona_name(player_name)
       end
 
       # Rules text for the menu system prompt. Override to scope rules to the current phase.
@@ -262,8 +263,8 @@ module PlaiTestr
           raise MoveError, "#{self.class}#legal_moves(#{player_name.inspect}), decision #{decision}, option #{i + 1}: #{problem}\n  #{move.inspect}" if problem
         end
 
-        repeated = moves.map { |m| m[:label] }.tally.select { |_, count| count > 1 }.keys
-        warning("#{self.class}#legal_moves(#{player_name.inspect}) repeats the label(s) #{repeated.map(&:inspect).join(', ')}") if repeated.any?
+        repeated = pick ? [] : moves.map { |m| m[:label] }.tally.select { |_, count| count > 1 }.keys
+        warning("#{self.class}#legal_moves repeats the label(s) #{repeated.map(&:inspect).join(', ')}") if repeated.any?
       end
 
       def move_problem(move, pick)
@@ -328,7 +329,8 @@ module PlaiTestr
         chosen = result['choices'].map { |i| moves[i - 1] }
         label  = chosen.empty? ? '(none)' : chosen.map { |m| m[:label] }.join('; ')
         log    = chosen.empty? ? '(none)' : chosen.map { |m| m[:log] || m[:label] }.join('; ')
-        action = { moves.first[:action].keys.first => { value: chosen.map { |m| m[:action].values.first[:value] } } }
+        name   = moves.empty? ? :pick : moves.first[:action].keys.first
+        action = { name => { value: chosen.map { |m| m[:action].values.first[:value] } } }
         out.puts "  #{decider_mark(result)} #{log}#{decider_note(result)}" unless result['auto']
 
         apply(player_name, action, result['decider'])
@@ -446,8 +448,8 @@ module PlaiTestr
       end
 
       def warning(text)
+        warn "  [warning] #{text}" if @echo_warnings && !@warnings.include?(text)
         @warnings << text
-        warn "  [warning] #{text}" if @echo_warnings
       end
 
       # --- Models ------------------------------------------------------------------------
@@ -460,7 +462,7 @@ module PlaiTestr
       end
 
       def fit_settings_to_model
-        model_max = @models.values_at(:player, :referee).compact.uniq.filter_map { |model| @client.context_length(model) }.min
+        model_max = @models.values_at(:player, :referee).compact.uniq.filter_map { |model| @client.context_length(model) }.min or return
         @settings = resolve_settings(model_max: model_max)
         build_agents
       end

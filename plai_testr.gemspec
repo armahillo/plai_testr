@@ -7,7 +7,8 @@ Gem::Specification.new do |spec|
   spec.email    = ['armahillo@gmail.com']
   spec.summary  = 'Automated tabletop game playtesting using local LLM agents'
   spec.license  = 'MIT'
-  spec.homepage = 'https://github.com/armahillo/plai_testr'
+  spec.homepage = 'https://aaronh.games/tools/plai_testr/'
+  source        = 'https://github.com/armahillo/plai_testr'
 
   spec.description = <<~DESC.strip
     PlAI Testr mediates sessions of tabletop games between LLM agents running locally
@@ -18,9 +19,9 @@ Gem::Specification.new do |spec|
 
   spec.metadata = {
     'homepage_uri'          => spec.homepage,
-    'source_code_uri'       => spec.homepage,
-    'changelog_uri'         => "#{spec.homepage}/blob/main/CHANGELOG.md",
-    'bug_tracker_uri'       => "#{spec.homepage}/issues",
+    'source_code_uri'       => source,
+    'changelog_uri'         => "#{source}/blob/main/CHANGELOG.md",
+    'bug_tracker_uri'       => "#{source}/issues",
     'rubygems_mfa_required' => 'true'
   }
 
@@ -29,7 +30,7 @@ Gem::Specification.new do |spec|
   spec.executables   = ['plai_testr']
   spec.require_paths = ['lib']
 
-  spec.required_ruby_version = '>= 3.2'
+  spec.required_ruby_version = '>= 3.4'
 
   spec.add_development_dependency 'rake',  '~> 13'
   spec.add_development_dependency 'rspec', '~> 3'
