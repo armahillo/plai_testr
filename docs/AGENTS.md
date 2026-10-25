@@ -12,9 +12,9 @@ When you open an app:
 2. Run `bundle exec rspec`. It is fast, needs no model, shows the state of every game, and refreshes `.plai_testr/gem`.
 3. Look at `games/`. Each game's `data/rules.md` is its rulebook, and `NOTES.md` (if present) holds rulings and open questions.
 4. Read the gem's docs when you need them, under `.plai_testr/gem/` (they match the installed version):
-   - `README.md`: every runner hook, the state classes, configuration
-   - `docs/frame_queue.md`: decisions inside decisions (attacks and responses, triggered effects), with a complete example
-   - `docs/referee.md`: yes/no rulings on free-text conditions by a second model, with an example
+   - `docs/technical/`: the technical reference. `runner.md` (every hook, moves, helpers, randomness, limits), `state.md` (state, hidden information, checkpoints), `rules-and-components.md`, `personas-and-bots.md`, `debrief.md`, `reports.md`, `specs.md`, `frame-queue.md` (decisions inside decisions, with a complete example) and `referee.md` (yes/no rulings by a second model)
+   - `docs/running-playtests.md`: every command and option, settings, output files
+   - `docs/getting-started.md`, `docs/ingesting-a-game-with-an-agent.md`, `docs/ingesting-a-game-manually.md`: the designer's guides, to point them at
    - `templates/examples/`: pristine copies of the example games, in case they were deleted from `games/`
 
 The example games show working patterns to copy:
@@ -48,6 +48,7 @@ games/<name>/
   data/bots.yml             Optional: parameters the bot reads, per persona
   NOTES.md                  Optional: open questions and unconfirmed engine choices
   spec/                     The game's specs
+  .plai_testr.yml           Example games only: the checksum of the template it was copied from (keep it: updates read it)
   sessions/ reports/        Output (gitignored)
 ```
 
@@ -94,11 +95,11 @@ A menu with one move is applied without asking anyone. `pick_range(player)` retu
 
 Randomness comes from `@rng`. It is reset for each decision from the seed and the decision number, so the same seed and the same choices always give the same game, interrupted or not.
 
-The gem's `README.md` (`.plai_testr/gem/README.md`) lists every hook.
+`.plai_testr/gem/docs/technical/runner.md` lists every hook and helper.
 
 ## Components
 
-Card lists, tiles and other components go in `data/components/`, one file per component, named after the file. `PlaiTestr::Deck.build(@rules, component: 'cards')` returns `data/components/cards.csv` (or `.yml`, `.json`) with a `uid` on every card; without `component:` it returns the first deck. A file is a list of records: a CSV with a header row (numbers become numbers, empty cells are left out) or a YAML or JSON list of hashes. A `copies` field makes that many copies. `games/hearts` reads `data/components/cards.csv`; `games/gin_rummy` keeps its deck inline under `components` in `rules.json`, which suits small generated decks. `generate game` creates a placeholder `data/components/cards.yml`; replace it.
+Card lists, tiles and other components go in `data/components/`, one file per component, named after the file. `PlaiTestr::Deck.build(@rules, component: 'cards')` returns `data/components/cards.csv` (or `.yml`, `.json`) with a `uid` on every card; without `component:` it returns the first deck. A file is a list of records: a CSV with a header row (numbers become numbers, empty cells are left out) or a YAML or JSON list of hashes. A `copies` field makes that many copies. Both example games (`games/hearts`, `games/gin_rummy`) read `data/components/cards.csv`. `generate game` creates a placeholder `data/components/cards.yml`; replace it.
 
 - Ask the designer for their component list in whatever form they have it (a spreadsheet or CSV export, YAML, a pasted table, a PDF). Don't retype it from the rules text.
 - Convert it to the format above. Keep the fields the engine or the players need; leave out print layout, art notes and other metadata.

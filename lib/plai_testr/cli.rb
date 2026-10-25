@@ -286,6 +286,6 @@ module PlaiTestr
 
     def clock = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-    def duration(seconds) = format('%dm %02ds', seconds / 60, seconds % 60)
+    def duration(seconds) = Reporter::Duration.format(seconds)
   end
 end

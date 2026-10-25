@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## Development
+
+## 0.2.1
+
+- Docs reorganized: the README is an overview linking to guides in `docs/` (getting started, ingesting a game with an agent or manually, running playtests) and a technical reference in `docs/technical/`.
+- The Gin Rummy example reads its deck from `data/components/cards.csv`, like Hearts.
+- `new` stamps each example game with its template checksum (`games/<name>/.plai_testr.yml`), so a later update can tell an untouched example (safe to replace) from an edited one (the new version goes alongside).
+- Play and botrun reports show the wall time; a resumed session adds each sitting.
+
+## 0.2.0
 
 Upgrading never breaks a game: every new hook has a default, and existing overrides keep working. See *Upgrading an existing app* below.
 

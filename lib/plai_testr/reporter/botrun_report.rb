@@ -32,7 +32,7 @@ module PlaiTestr
           "| **Players** | #{@played.first&.dig('names')&.length || '—'} |"
         ]
         rows << "| **Personas** | #{@personas ? @personas.join(', ') : 'random per seed'} |" if personas?
-        rows << "| **Time** | #{@seconds.round(1)} s (#{(@seconds * 1000 / [@results.length, 1].max).round} ms per game) |"
+        rows << "| **Wall time** | #{Duration.format(@seconds)} (#{(@seconds * 1000 / [@results.length, 1].max).round} ms per game) |"
         rows << "| **Generated** | #{Time.now.strftime('%Y-%m-%d %H:%M')} |"
 
         "# Botrun: #{@game}\n\n| | |\n|---|---|\n#{rows.join("\n")}\n\n" \

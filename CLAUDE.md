@@ -28,22 +28,23 @@ lib/plai_testr/
   game.rb                       PlaiTestr.register / load, Game (rules, personas, fingerprint, check!)
   personas.rb                   personas.yml + bots.yml
   config.rb  model_settings.rb  errors.rb  rules_loader.rb  deck.rb  event_log.rb  names.rb  generator.rb
-templates/app/                  What `plai_testr new` copies (AGENTS.md is the guide for the app's agent)
+templates/app/                  What `plai_testr new` copies (its AGENTS.md is a stub; CLAUDE.md imports the guide)
 templates/game/                 What `plai_testr generate game` copies (ERB)
 templates/examples/             Hearts and Gin Rummy: complete games, copied into every new app
-docs/                           frame_queue.md, referee.md (shipped with the gem)
+docs/                           Guides for designers (getting-started, ingesting-a-game-*, running-playtests) and the agent guide AGENTS.md
+docs/technical/                 Technical reference: runner, state, components, personas and bots, debrief, reports, specs, frame queue, referee
 spec/                           Gem specs; spec/support/test_game.rb builds a throwaway game on disk
 ```
 
 ## Working here
 
 - `bundle exec rspec` runs the gem specs, including one that generates an app and runs the example games' specs. It needs no model.
-- The example games are part of the product: users copy their patterns, so keep them idiomatic and current with the API. Changing a hook, move shape or state key means updating `templates/examples/`, `templates/game/`, `templates/app/AGENTS.md`, the docs and `README.md` together.
+- The example games are part of the product: users copy their patterns, so keep them idiomatic and current with the API. Changing a hook, move shape or state key means updating `templates/examples/`, `templates/game/`, `docs/AGENTS.md` and the docs together.
 - Hooks on `Session::Runner` are public and form the stable API; internals are private. Don't add a public method a game could collide with (games commonly define helpers like `step`, `players`, `hand`).
 - Raise `PlaiTestr::Error` subclasses (`RulesError`, `PersonaError`, `SessionError`, `ModelError`, `UsageError`, `MoveError`) for anything a user can cause. The CLI prints their message; `PLAI_TESTR_DEBUG=1` shows the backtrace.
 - Output goes through `out` (an IO passed in), never bare `puts` or a swapped `$stdout`, so botruns and specs can silence it.
 - Randomness in games comes from `@rng`, reseeded per decision from the seed and decision number. Don't add other sources of randomness to the decision path.
-- Bump `lib/plai_testr/version.rb` and add a `CHANGELOG.md` entry for releases. A changed version invalidates saved sessions (resume compares a fingerprint that includes it).
+- Add `CHANGELOG.md` entries under the top `## Development` heading; the maintainer renames it to the version and bumps `lib/plai_testr/version.rb` when cutting a release. A changed version invalidates saved sessions (resume compares a fingerprint that includes it).
 
 ## Conventions
 

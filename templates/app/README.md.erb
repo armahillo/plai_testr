@@ -34,7 +34,7 @@ Every command takes `--help` to list its options, e.g. `bundle exec plai_testr h
 
 `--quiet` shows only a progress line and the result; `--verbose` shows more. Ctrl+C once saves and stops after the current move (a botrun finishes its current game and reports); Ctrl+C twice quits immediately.
 
-Settings for the whole app (decision limit, model, Ollama host, context size) are in `config/plai_testr.rb`.
+Settings for the whole app (decision limit, model, Ollama host, context size) are in `config/plai_testr.rb`. [Running playtests](https://github.com/armahillo/plai_testr/blob/main/docs/running-playtests.md) covers every command, option and setting.
 
 ## Layout
 
@@ -85,9 +85,9 @@ Some ways to start:
 bundle exec plai_testr generate game my_game
 ```
 
-This creates the skeleton above. Fill in `data/rules.json` and `data/rules.md`, then implement the runner hooks (`setup`, `legal_moves`, `apply_action_effects`) and, optionally, bot rules in `bot_choice`. The examples show complete games; the [PlAI Testr README](https://github.com/armahillo/plai_testr#writing-a-game) lists every hook.
+This creates the skeleton above. Write the rules in `data/rules.md` and the components in `data/components/`, then build the harness: see [Ingesting a game with an agent](https://github.com/armahillo/plai_testr/blob/main/docs/ingesting-a-game-with-an-agent.md) or [Ingesting a game manually](https://github.com/armahillo/plai_testr/blob/main/docs/ingesting-a-game-manually.md). The same guides are in `.plai_testr/gem/docs/`, matching the installed version.
 
-`bundle exec rspec games/my_game` runs its specs. The generated botrun spec stays pending until the game can play itself to the end.
+`bundle exec rspec games/my_game/spec` runs its specs. The standard checks stay pending until the game can play itself to the end.
 
 ## Removing a game
 

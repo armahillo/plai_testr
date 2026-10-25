@@ -62,6 +62,7 @@ module PlaiTestr
         @turn_log      = []
         @warnings      = []
         @running       = true
+        @started       = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         @fingerprint   = game.fingerprint if persist
         @client        = Agents::OllamaClient.new(think_log: (think_log_path if persist), out: out, verbose: verbose)
         @settings      = resolve_settings
@@ -610,11 +611,12 @@ module PlaiTestr
       end
 
       def finish
+        data['wall_seconds'] = data.fetch('wall_seconds', 0) + Process.clock_gettime(Process::CLOCK_MONOTONIC) - @started
         if game_over? && @running
           @status = 'completed'
           save_checkpoint('completed')
           @report_path = generate_report
-          out.puts "\nGame complete. Report: #{@report_path}"
+          out.puts "\nGame complete in #{Reporter::Duration.format(data['wall_seconds'])}. Report: #{@report_path}"
         else
           @status = 'interrupted'
           save_checkpoint('interrupted')

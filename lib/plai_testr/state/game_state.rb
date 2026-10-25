@@ -86,7 +86,7 @@ module PlaiTestr
       # the event log entries meant for them. Subclasses hide more with
       # `super.except('deck').merge('deck_size' => ...)`. serialize (checkpoints) keeps all of @data.
       def data_for(observer)
-        shown = @data.except('warnings')
+        shown = @data.except('warnings', 'wall_seconds')
         return shown unless shown.key?('log')
 
         shown.merge('log' => EventLog.new(shown['log']).visible_to(observer))

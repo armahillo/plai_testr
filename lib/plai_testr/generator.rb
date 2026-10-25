@@ -15,8 +15,9 @@ module PlaiTestr
       raise UsageError, "#{dir} already exists and is not empty" if Dir.exist?(root) && !Dir.empty?(root)
 
       copy(File.join(TEMPLATES, 'app'), root, app_name: File.basename(root), version: VERSION.split('.').first(2).join('.'))
-      Dir.children(File.join(TEMPLATES, 'examples')).sort.each do |example|
-        copy(File.join(TEMPLATES, 'examples', example), File.join(root, 'games', example))
+      Examples.names.each do |example|
+        copy(File.join(Examples::DIR, example), File.join(root, 'games', example))
+        Examples.stamp(File.join(root, 'games', example), example)
       end
       Guide.link(root)
       root

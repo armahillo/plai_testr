@@ -8,6 +8,10 @@ RSpec.describe PlaiTestr::Reporter::BotrunReport do
   let(:plain)   { [{ 'seed' => 1, 'winner' => 'Player 1', 'names' => { 'Player 1' => 'Player 1' }, 'decisions' => 3, 'rules' => {} }] }
   let(:persona) { [plain.first.merge('personas' => { 'Player 1' => 'grinder' })] }
 
+  it 'shows the wall time' do
+    expect(report(plain)).to include('| **Wall time** | 0m 01s (1000 ms per game) |')
+  end
+
   it 'leaves personas out of the header for games without them' do
     expect(report(plain)).not_to include('**Personas**')
   end

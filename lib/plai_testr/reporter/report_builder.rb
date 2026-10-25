@@ -37,6 +37,7 @@ module PlaiTestr
         rows << "| **Personas** | #{data['personas'].map { |p, label| "#{p}: #{label}" }.join('; ')} |" if data['personas']
         rows << "| **Model settings** | #{settings.map { |key, value| "#{key} #{value}" }.join(', ')} |" if settings && !bot_only
         rows << "| **Decisions** | #{@game_state.turn} |"
+        rows << "| **Wall time** | #{Duration.format(data['wall_seconds'])} |" if data['wall_seconds']
         rows << "| **Generated** | #{Time.now.strftime('%Y-%m-%d %H:%M')} |"
 
         "# Playtest Report: #{@rules.dig('game', 'name')}\n\n| | |\n|---|---|\n#{rows.join("\n")}"

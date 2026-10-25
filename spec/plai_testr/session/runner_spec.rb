@@ -234,6 +234,7 @@ RSpec.describe PlaiTestr::Session::Runner do
     expect(checkpoint['status']).to eq('completed')
     expect(checkpoint['turn_log'].first).not_to have_key('state_after')
     expect(report).to include('**Winner: Alice**', '## Model reliability', '## Speed', '## Turn log', '| **Model settings** | context_size 8192')
+    expect(report).to match(/\| \*\*Wall time\*\* +\| 0m 0\ds +\|/)
   end
 
   it 'leaves the signal handlers as they were after a run' do
@@ -263,6 +264,19 @@ RSpec.describe PlaiTestr::Session::Runner do
 
       expect(resumed.data['total']).to eq(2)
       expect(resumed.seed).to eq(7)
+    end
+    
+    it 'adds the wall time of each sitting' do
+      runner.setup
+      runner.data['wall_seconds'] = 125
+      runner.send(:save_checkpoint, 'interrupted')
+    
+      resumed = game_class.resume(game, runner.session_id, out: out)
+      resumed.moves = runner.moves
+      resumed.run
+    
+      expect(File.read(resumed.report_path)).to match(/\| \*\*Wall time\*\* +\| 2m 0[56]s +\|/)
+      expect(resumed.game_state.serialize_for('Alice')['data']).not_to have_key('wall_seconds')
     end
 
     it 'refuses a session whose game has changed since it was saved' do
