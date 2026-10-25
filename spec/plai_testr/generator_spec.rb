@@ -18,6 +18,13 @@ RSpec.describe PlaiTestr::Generator do
       )
     end
 
+    it 'links the installed gem, so CLAUDE.md imports the current guide' do
+      expect(File.realpath(File.join(app, '.plai_testr/gem'))).to eq(File.realpath(PlaiTestr::Guide::ROOT))
+      expect(File.read(File.join(app, 'CLAUDE.md'))).to include('@AGENTS.md', "@#{PlaiTestr::Guide::GUIDE}")
+      expect(File.read(File.join(app, 'AGENTS.md'))).to start_with('# my_playtests').and include(PlaiTestr::Guide::GUIDE)
+      expect(File.read(File.join(app, '.gitignore'))).to include('.plai_testr/')
+    end
+
     it 'bundles the installed gem by version' do
       expect(File.read(File.join(app, 'Gemfile'))).to include("gem 'plai_testr', '~> #{PlaiTestr::VERSION[/\A\d+\.\d+/]}'")
     end
@@ -35,14 +42,20 @@ RSpec.describe PlaiTestr::Generator do
 
       expect(Dir.glob('**/*', base: File.join(games_dir, 'dice_race')).select { |f| f.end_with?('.rb', '.json', '.md', '.yml') }).to contain_exactly(
         'lib/dice_race.rb', 'lib/dice_race/session/runner.rb', 'lib/dice_race/bot.rb', 'lib/dice_race/state/game_state.rb',
-        'data/rules.json', 'data/rules.md', 'data/personas.yml', 'data/bots.yml', 'spec/session/runner_spec.rb'
+        'data/rules.json', 'data/rules.md', 'data/components/cards.yml', 'data/personas.yml', 'data/bots.yml', 'spec/session/runner_spec.rb'
       )
       expect(File.read(File.join(games_dir, 'dice_race/lib/dice_race.rb'))).to include("PlaiTestr.register('dice_race'", 'DiceRace::Session::Runner')
       expect(JSON.parse(File.read(File.join(games_dir, 'dice_race/data/rules.json'))).dig('game', 'name')).to eq('Dice Race')
+      expect(File.read(File.join(games_dir, 'dice_race/lib/dice_race/session/runner.rb')))
+        .to include(*%w[setup legal_moves apply_action_effects view_text_for turn_phase debrief_questions debrief_facts].map { |hook| "def #{hook}" })
     end
 
     it 'refuses names that are not snake_case' do
       expect { generator.game('Dice-Race', games_dir: games_dir) }.to raise_error(PlaiTestr::UsageError, /snake_case/)
+    end
+
+    it 'refuses names the CLI uses for its own commands' do
+      expect { generator.game('games', games_dir: games_dir) }.to raise_error(PlaiTestr::UsageError, /plai_testr command/)
     end
 
     it 'refuses a game that already exists' do
@@ -59,6 +72,6 @@ RSpec.describe PlaiTestr::Generator do
     out, status = Open3.capture2e('ruby', '-I', File.expand_path('../../lib', __dir__), Gem.bin_path('rspec-core', 'rspec'), chdir: app)
 
     expect(status).to be_success, out
-    expect(out).to match(/0 failures, 2 pending/)
+    expect(out).to match(/0 failures, 5 pending/)
   end
 end

@@ -1,36 +1,71 @@
 module <%= module_name %>
   module Session
+    # The rules engine. The methods below are the hooks every game writes; the gem's README
+    # lists every hook, and its agent guide (.plai_testr/gem/docs/AGENTS.md) explains how to
+    # design each one. Helpers go below `private`.
+    #
+    # The gem already provides these; override one only to change it:
+    #   rules_text_for     data/rules.md (override to scope it to a step or append a card list)
+    #   recent_events_for  the last events this player may see (count: recent_events: in register)
+    #   debrief_view_for   the result, final view_text_for and the player's visible log
+    #   next_player, pick_range, game_over?, persona_for, display_name, prompt_note_for,
+    #   think_about?, bot_choice (from bot.rb), botrun_stats, report_sections, report_debrief?
+    #   log_turn           the number stamped on log entries (default: the decision number)
+    # Private helpers: players, pstate(player), whose(player, viewer), tally(player, key),
+    # sole_leader(scores), log(text, to:), option(...), data, event_log, @rng, @rules.
     class Runner < PlaiTestr::Session::Runner
       include Bot
 
-      RULES_PATH = File.expand_path('../../../data/rules.md', __dir__)
-
+      # Ask about the player's own experience, and only what GAME FACTS (debrief_facts) and the
+      # player's own plans can answer: small models invent answers to open questions such as
+      # "what felt pointless?". Point each question at a decision, component or fact.
       DEBRIEF_QUESTIONS = [
-        'Which decision in this game mattered most, and why?',
-        'Which rule was unclear or confusing?',
-        'Which choices felt automatic (the choice did not matter)?'
+        'Which of your decisions mattered most, and why? Name the round.',
+        'Which of your plays scored less than you expected? What happened instead?',
+        'Which rule was unclear or confusing when you had to use it? Name the situation.',
+        'Did your strategy work? Use GAME FACTS to say what helped it and what got in the way.'
       ].freeze
 
+      # Build the starting state in `data` (JSON-safe values only; checkpoints save it as is).
+      # Not called on resume. Shuffle with @rng so seeds replay.
       def setup
         raise NotImplementedError, "#{self.class}#setup: build the starting state; PlaiTestr::Deck.build(@rules).shuffle(random: @rng) gives a shuffled deck"
       end
 
+      # The menu: every legal move for `player` at the current step, built with option(...).
+      # Put engine-computed facts in labels (score after, cards left), never advice.
       def legal_moves(_player)
         raise NotImplementedError, "#{self.class}#legal_moves: return [option('Play 3♣', public: 'played 3♣', play: { value: uid }), ...]"
       end
 
+      # Apply the chosen move. Pattern-match the action; log events with log(text), and
+      # log(text, to: player) for private ones; set status when the game ends.
       def apply_action_effects(_player, _action)
         raise NotImplementedError, "#{self.class}#apply_action_effects: case action in { play: { value: uid } } then ...; apply it to @game_state; set status 'game_over', 'winner' and 'end_reason' when the game ends"
       end
 
-      def rules_text_for(_player) = @rules_text ||= File.read(RULES_PATH)
+      # What the player sees each turn: generated from state, never hand-written, and only
+      # what `player` may know.
+      def view_text_for(_player)
+        raise NotImplementedError, "#{self.class}#view_text_for: describe the board, scores and the player's own hand from state, as plain text"
+      end
+
+      # Short step label for each turn line and the report, e.g. "Round 3 · draw".
+      def turn_phase(_player) = data['step']
 
       def debrief_questions(_player) = DEBRIEF_QUESTIONS
 
-      private
+      # Engine-counted facts the debrief questions depend on, as a Hash with plain-language
+      # keys (shown to the model as YAML under GAME FACTS, ahead of the final position).
+      # Include, per player: final score and points by source, counts of key actions (count
+      # them with tally), races or majorities and who won them; and who ended the game, when
+      # and how. Compute only from `data` and player state: `debrief <session_id>` rebuilds
+      # this from the saved checkpoint, so instance variables are gone by then.
+      def debrief_facts(_player)
+        raise NotImplementedError, "#{self.class}#debrief_facts: return { 'how_it_ended' => ..., 'players' => { name => { 'final_score' => ..., ... } } } from data"
+      end
 
-      def players        = @game_state.players
-      def pstate(player) = @game_state.player_state(player)
+      private
     end
   end
 end

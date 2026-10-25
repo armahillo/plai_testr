@@ -3,13 +3,11 @@ module GinRummy
     class Runner < PlaiTestr::Session::Runner
       include Bot
 
-      RULES_PATH = File.expand_path('../../../data/rules.md', __dir__)
-      RECENT_LOG = 10
-
       DEBRIEF_QUESTIONS = [
-        'Which decision in this game mattered most, and why?',
+        'Which of your decisions mattered most, and why? Name the hand.',
         'When did you choose to knock (or not), and was it the right call?',
-        'Which choices felt automatic (the choice did not matter)?'
+        'When did taking from the discard pile help or hurt you? Name the hand.',
+        'Did your strategy work? Use GAME FACTS to say what helped it and what got in the way.'
       ].freeze
 
       def setup
@@ -35,8 +33,6 @@ module GinRummy
         end
       end
 
-      def rules_text_for(_player) = @rules_text ||= File.read(RULES_PATH)
-
       def view_text_for(player)
         best = Melds.best(hand(player))
 
@@ -52,9 +48,15 @@ module GinRummy
 
       def turn_phase(_player) = "hand #{data['hand']} · #{step}"
 
-      def recent_events_for(player) = event_log.recent_for(player, RECENT_LOG)
-
       def debrief_questions(_player) = DEBRIEF_QUESTIONS
+
+      def debrief_facts(_player)
+        {
+          'how_it_ended' => "#{@game_state.status['winner']} won (#{@game_state.status['end_reason'].to_s.tr('_', ' ')}) after #{data['hand']} hands",
+          'hand_results' => data.fetch('results', {}),
+          'players' => players.to_h { |p| [p, { 'final_score' => pstate(p).score, 'hands_won' => data.dig('hand_wins', p) || {} }] }
+        }
+      end
 
       private
 
@@ -140,6 +142,8 @@ module GinRummy
 
         pstate(winner).apply_changes('score' => pstate(winner).score + points)
         data['results'] = data.fetch('results', {}).merge(result => data.dig('results', result).to_i + 1)
+        wins = (data['hand_wins'] ||= {})[winner] ||= {}
+        wins[result] = wins[result].to_i + 1
         log("#{knocker} #{gin ? 'went gin' : "knocked with #{knock.points}"} (#{melds_text(knock)}); " \
             "#{defender} had #{Melds.points(left)} deadwood (#{melds_text(defense)}#{", laid off #{list(defense.deadwood - left)}" unless gin || left == defense.deadwood}). " \
             "#{winner} scores #{points}#{' for the undercut' if result == 'undercut'}.")
@@ -180,8 +184,6 @@ module GinRummy
 
       def opponent(player) = (players - [player]).first
 
-      def whose(player, viewer) = player == viewer ? 'You' : player
-
       def list(cards)      = cards.map { |c| c['name'] }.join(', ')
       def top              = discard_pile.last
       def points_to_win    = @rules.fetch('points_to_win')
@@ -189,8 +191,6 @@ module GinRummy
       def step             = @game_state.step
       def stock            = @game_state.stock
       def discard_pile     = @game_state.discard_pile
-      def players          = @game_state.players
-      def pstate(player)   = @game_state.player_state(player)
       def hand(player)     = pstate(player).hand
     end
   end

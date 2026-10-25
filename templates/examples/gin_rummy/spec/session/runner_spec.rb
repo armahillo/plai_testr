@@ -1,5 +1,9 @@
 require 'spec_helper'
 
+RSpec.describe GinRummy::Session::Runner, 'as a PlAI Testr game' do
+  it_behaves_like 'a PlAI Testr game', 'gin_rummy'
+end
+
 RSpec.describe GinRummy::Session::Runner do
   let(:game)   { PlaiTestr.load('gin_rummy') }
   let(:runner) { runner_with(nil) }
@@ -80,19 +84,6 @@ RSpec.describe GinRummy::Session::Runner do
 
       expect(bot_rule('quick_knocker')).to eq('knock')
       expect(bot_rule('gin_hunter')).to eq('shed_deadwood')
-    end
-  end
-
-  it 'builds every prompt a model player would see' do
-    (1..3).each do |seed|
-      session = runner_with(nil, seed: seed)
-      session.setup
-      until session.game_over?
-        player = session.next_player
-        %i[rules_text_for view_text_for recent_events_for persona_for turn_phase].each { |hook| session.public_send(hook, player) }
-        session.play_turn
-      end
-      game.players.each { |p| session.debrief_view_for(p) }
     end
   end
 

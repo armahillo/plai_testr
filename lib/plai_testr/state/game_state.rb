@@ -82,11 +82,14 @@ module PlaiTestr
 
       private
 
-      # Override in game-specific subclasses to filter or transform data
-      # per observer (e.g. hide face-down deck contents, show only counts).
-      # The full @data is always used by serialize (checkpoints).
-      def data_for(_observer)
-        @data
+      # What `observer` may see of @data. The default hides the runner's warnings and shows only
+      # the event log entries meant for them. Subclasses hide more with
+      # `super.except('deck').merge('deck_size' => ...)`. serialize (checkpoints) keeps all of @data.
+      def data_for(observer)
+        shown = @data.except('warnings')
+        return shown unless shown.key?('log')
+
+        shown.merge('log' => EventLog.new(shown['log']).visible_to(observer))
       end
 
       # Override in game-specific subclasses to use a richer PlayerState

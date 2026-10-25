@@ -55,13 +55,16 @@ module PlaiTestr
     end
 
     def lint!
-      LINT_SEEDS.each { |seed| runner(seed).play_out }
-      @out.puts "  Lint: #{LINT_SEEDS.length} bot games played without errors"
+      LINT_SEEDS.each do |seed|
+        game = runner(seed).play_out
+        @players.each { |player| [game.debrief_summary(player), game.debrief_view_for(player)] }
+      end
+      @out.puts "  Lint: #{LINT_SEEDS.length} bot games played and debriefs built without errors"
     end
 
     private
 
-    def wanted = @models.values_at(:player, :referee).compact.uniq
+    def wanted = @models.values_at(:player, :referee, :debrief).compact.uniq
 
     def runner(seed)
       @game.runner_class.new(game: @game, players: @players, seed: seed, personas: @personas, mode: 'bot', persist: false, out: StringIO.new, echo_warnings: false)

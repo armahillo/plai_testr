@@ -1,29 +1,10 @@
 require 'spec_helper'
 
 RSpec.describe <%= module_name %>::Session::Runner do
-  let(:game) { PlaiTestr.load('<%= name %>') }
+  # The gem's standard checks (plai_testr/rspec): bot games end at every player count, every
+  # turn and debrief prompt builds, state is JSON-safe, a mid-game resume gives the same
+  # result, and hands stay hidden. Remove `pending:` once the hooks are implemented.
+  it_behaves_like 'a PlAI Testr game', '<%= name %>', pending: 'implement setup, legal_moves, apply_action_effects, view_text_for and debrief_facts'
 
-  def runner(seed) = described_class.new(game: game, players: game.players, seed: seed, mode: 'bot', persist: false, out: StringIO.new)
-
-  it 'plays whole games with its bot rules' do
-    pending 'implement setup, legal_moves and apply_action_effects'
-
-    results = PlaiTestr::Botrun.new(game: game, players: game.players, seeds: (1..10).to_a).run
-
-    expect(results.map { |r| r['error'] }.compact).to be_empty
-  end
-
-  it 'builds every prompt a model player would see' do
-    pending 'implement the game, its bot rules and view_text_for'
-
-    (1..3).each do |seed|
-      session = runner(seed)
-      session.setup
-      until session.game_over?
-        player = session.next_player
-        %i[rules_text_for view_text_for recent_events_for persona_for turn_phase].each { |hook| session.public_send(hook, player) }
-        session.play_turn
-      end
-    end
-  end
+  # Rules specs go here: set up a situation, then check legal_moves and apply_action_effects.
 end

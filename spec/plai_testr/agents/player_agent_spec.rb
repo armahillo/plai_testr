@@ -152,6 +152,16 @@ RSpec.describe PlaiTestr::Agents::PlayerAgent do
                              { 'question' => 'Weakest card?',   'answer' => 'nothing' }])
     end
 
+    it 'puts the game summary first and thinks only when asked' do
+      expect(client).to receive(:chat).once do |args|
+        expect(args[:messages].last[:content]).to match(/GAME SUMMARY:\nFACTS.*YOUR FINAL POSITION/m)
+        expect(args).to include(think: true)
+        chat_response('{"q1":"a","q2":"b"}')
+      end
+
+      agent.debrief(rules_text: 'RULES', view_text: 'FINAL VIEW', questions: questions, summary: 'FACTS', think: true)
+    end
+
     it 'returns empty answers instead of raising when the model never replies usefully' do
       allow(client).to receive(:chat).and_return(chat_response('not json'))
 

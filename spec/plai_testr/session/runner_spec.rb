@@ -154,6 +154,77 @@ RSpec.describe PlaiTestr::Session::Runner do
     expect(runner.data['debrief']['Alice']).to eq([{ 'question' => 'Any problems?', 'answer' => 'none really' }])
   end
 
+  describe 'debrief summary' do
+    before do
+      runner.define_singleton_method(:debrief_questions) { |_p| ['Any problems?'] }
+      runner.define_singleton_method(:botrun_stats) { { 'added' => { 'Alice' => 3 } } }
+      allow(client).to receive(:chat).with(hash_including(format: hash_including('required' => ['q1']))).and_return(chat('{"q1":"none"}'))
+    end
+
+    def debrief_prompt(player)
+      prompts = []
+      allow(client).to receive(:chat).with(hash_including(format: hash_including('required' => ['q1']))) do |args|
+        prompts << args[:messages].last[:content]
+        chat('{"q1":"none"}')
+      end
+      runner.run
+      prompts[runner.game_state.players.index(player)]
+    end
+
+    it 'puts the outcome, the game facts, and the player\'s own decisions and plans ahead of the final position' do
+      prompt = debrief_prompt('Alice')
+
+      expect(prompt).to include('OUTCOME:', 'You won', 'Final scores: You', 'GAME FACTS', "added:\n  Alice: 3", 'YOUR DECISIONS:', '1 decisions: 1 by you',
+                                'YOUR PLAN AS IT CHANGED', 'add fast')
+      expect(prompt.index('GAME SUMMARY')).to be < prompt.index('YOUR FINAL POSITION')
+    end
+
+    it 'debriefs with its own model and thinking when asked' do
+      thinker = runner_for(models: { player: 'p-model', debrief: 'big-model', debrief_think: true })
+      thinker.define_singleton_method(:debrief_questions) { |_p| ['Any problems?'] }
+      thinker.run
+
+      expect(client).to have_received(:chat).with(hash_including(model: 'big-model', think: true)).twice
+      expect(thinker.data).to include('debrief_model' => 'big-model', 'debrief_think' => true)
+      expect(File.read(File.join(PlaiTestr.reports_dir, "#{thinker.session_id}.md"))).to include('_Answered by big-model (thinking)._')
+    end
+
+    it 're-debriefs a completed session, keeping the earlier answers' do
+      runner.run
+      again = game.runner_class.redebrief(game, runner.session_id, models: { debrief: 'big-model' }, out: out)
+      again.define_singleton_method(:debrief_questions) { |_p| ['Any problems?'] }
+      again.debrief!
+
+      checkpoint = JSON.parse(File.read(File.join(PlaiTestr.sessions_dir, runner.session_id, 'state.json')))
+      expect(checkpoint['status']).to eq('completed')
+      expect(checkpoint.dig('game_state', 'data', 'debrief_model')).to eq('big-model')
+      expect(checkpoint.dig('game_state', 'data', 'debrief_history').first['debrief_model']).to eq('p-model')
+      expect(report).to include('_Answered by big-model._')
+    end
+
+    it 'keeps the game\'s warnings when a re-debrief rebuilds the report' do
+      runner.setup
+      runner.send(:warning, 'menu had a duplicate option')
+      runner.play_turn until runner.game_over?
+      runner.send(:finish)
+
+      again = game.runner_class.redebrief(game, runner.session_id, out: out)
+      again.define_singleton_method(:debrief_questions) { |_p| ['Any problems?'] }
+      again.debrief!
+
+      expect(report).to include('menu had a duplicate option')
+      expect(again.game_state.serialize_for('Alice')['data']).not_to have_key('warnings')
+    end
+
+    it 'refuses to re-debrief a session that is not complete' do
+      runner.setup
+      runner.play_turn
+      runner.send(:save_checkpoint, 'interrupted')
+
+      expect { game.runner_class.redebrief(game, runner.session_id) }.to raise_error(PlaiTestr::SessionError, /not complete/)
+    end
+  end
+
   it 'plays to the end, checkpoints as completed, and writes a report' do
     runner.run
 
@@ -322,7 +393,7 @@ RSpec.describe PlaiTestr::Session::Runner do
       prompt = include(hash_including(content: include("YOUR STRATEGY (follow it in every decision): Patient\n- Count before you add.\n- Add one at a time.")))
       expect(client).to have_received(:chat).with(hash_including(messages: prompt)).at_least(:once)
       expect(runner.persona_for(runner.game_state.players.find { |p| runner.persona(p) == 'bold' })).to eq("Bold\n- Never count; add.")
-      expect(report).to include('| **Personas** |')
+      expect(report).to match(/\| \*\*Personas\*\* +\|/)
     end
 
     it 'shows persona names in the console and the report, and keeps player ids in the log data' do
@@ -331,7 +402,7 @@ RSpec.describe PlaiTestr::Session::Runner do
 
       expect(runner.display_names).to eq('Alice' => 'Patient', 'Bob' => 'Bold')
       expect(out.string).to include('Turn 1 — Patient')
-      expect(File.read(runner.report_path)).to include('| **Players** | Patient (Alice), Bold (Bob) |', '**Winner: Patient**', '**1. Patient:**')
+      expect(File.read(runner.report_path)).to include('**Winner: Patient**', '**1. Patient:**').and match(/\| \*\*Players\*\* +\| Patient \(Alice\), Bold \(Bob\) +\|/)
       expect(runner.turn_log.first['player']).to eq('Alice')
     end
 
@@ -407,7 +478,7 @@ RSpec.describe PlaiTestr::Session::Runner do
       runner.script = { 'choice' => 2, 'rule' => 'take_two', 'obvious' => true }
       runner.run
 
-      expect(report).to include('## Bot agreement', '| take_two | obvious | 2 | 2 | 100% |')
+      expect(report).to include('## Bot agreement').and match(/\| take_two +\| obvious +\| 2 +\| 2 +\| 100% +\|/)
     end
   end
 end

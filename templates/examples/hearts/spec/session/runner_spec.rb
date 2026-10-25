@@ -1,5 +1,9 @@
 require 'spec_helper'
 
+RSpec.describe Hearts::Session::Runner, 'as a PlAI Testr game' do
+  it_behaves_like 'a PlAI Testr game', 'hearts'
+end
+
 RSpec.describe Hearts::Session::Runner do
   let(:game)   { PlaiTestr.load('hearts') }
   let(:runner) { runner_with(nil) }
@@ -95,19 +99,6 @@ RSpec.describe Hearts::Session::Runner do
 
       expect(safe['choices'].map { |i| moves[i - 1][:label] }).to contain_exactly('Pass Q♠ (13 pts)', 'Pass A♥ (1 pt)')
       expect(moon['choices'].map { |i| moves[i - 1][:label] }).to contain_exactly('Pass 2♣', 'Pass 3♦')
-    end
-  end
-
-  it 'builds every prompt a model player would see' do
-    (1..3).each do |seed|
-      session = runner_with(nil, seed: seed)
-      session.setup
-      until session.game_over?
-        player = session.next_player
-        %i[rules_text_for view_text_for recent_events_for persona_for turn_phase].each { |hook| session.public_send(hook, player) }
-        session.play_turn
-      end
-      game.players.each { |p| session.debrief_view_for(p) }
     end
   end
 

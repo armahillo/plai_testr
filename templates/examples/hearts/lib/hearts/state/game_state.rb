@@ -9,10 +9,7 @@ module Hearts
       private
 
       def data_for(observer)
-        @data.except('passes', 'log').merge(
-          'passed' => @data.fetch('passes', {}).keys,
-          'log'    => PlaiTestr::EventLog.new(@data.fetch('log', [])).visible_to(observer)
-        )
+        super.except('passes').merge('passed' => @data.fetch('passes', {}).keys)
       end
     end
   end

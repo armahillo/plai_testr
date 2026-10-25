@@ -18,11 +18,13 @@ module PlaiTestr
       Dir.children(File.join(TEMPLATES, 'examples')).sort.each do |example|
         copy(File.join(TEMPLATES, 'examples', example), File.join(root, 'games', example))
       end
+      Guide.link(root)
       root
     end
 
     def game(name, games_dir: PlaiTestr.games_dir)
       raise UsageError, "Game names are lowercase snake_case, like my_game (got #{name.inspect})" unless name.match?(GAME_NAME)
+      raise UsageError, "#{name} is a plai_testr command; choose another game name" if CLI::APP_COMMANDS.key?(name)
 
       root  = File.join(games_dir, name)
       words = name.split('_').map(&:capitalize)

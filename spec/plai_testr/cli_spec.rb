@@ -53,6 +53,10 @@ RSpec.describe PlaiTestr::CLI do
     expect { described_class.new(game).run(%w[play --skip-preflight]) }.to raise_error(SystemExit) { |e| expect(e.status).to eq(130) }
   end
 
+  it 'refuses an option the command does not take, and shows the ones it does' do
+    expect { described_class.new(game).run(%w[play --games 5]) }.to raise_error(PlaiTestr::UsageError, /invalid option: --games.*Usage: plai_testr counting play/m)
+  end
+
   it 'resumes through the runner class' do
     allow(runner).to receive(:data).and_return('mode' => 'bot')
     expect(runner_class).to receive(:resume).with(game, 'abc', out: $stdout, verbose: nil).and_return(runner)
@@ -61,8 +65,32 @@ RSpec.describe PlaiTestr::CLI do
   end
 
   describe '.start' do
-    it 'names the available games when given no game' do
-      expect { described_class.start([]) }.to raise_error(SystemExit).and output(/<game> <command>/).to_stderr
+    it 'shows the usage when given no arguments' do
+      expect { described_class.start([]) }.to output(/plai_testr <game> <command>/).to_stdout
+    end
+
+    it 'lists the games in the app' do
+      FileUtils.mkdir_p(File.join(game.root, 'lib'))
+      FileUtils.touch(File.join(game.root, 'lib', 'counting.rb'))
+
+      expect { described_class.start(%w[games]) }.to output(/\Acounting\s+T v1\n\z/).to_stdout
+    end
+
+    it 'shows only the options a command takes' do
+      expect { described_class.start(%w[help botrun]) }.to output(/--games N.*--personas LIST.*"all"/m).to_stdout
+      expect { described_class.start(%w[help botrun]) }.not_to output(/--model/).to_stdout
+    end
+
+    it 'shows a command\'s options for --help anywhere after the game' do
+      expect { described_class.start(%w[hearts play --seed 3 --help]) }.to output(/Usage: plai_testr hearts play \[options\].*--seed N/m).to_stdout
+    end
+
+    it 'shows the version' do
+      expect { described_class.start(%w[--version]) }.to output("plai_testr #{PlaiTestr::VERSION}\n").to_stdout
+    end
+
+    it 'refuses an unknown command' do
+      expect { described_class.start(%w[help hearts dance]) }.to raise_error(SystemExit).and output(/Unknown command: hearts dance/).to_stderr
     end
 
     it 'prints the message of a PlaiTestr error without a backtrace' do

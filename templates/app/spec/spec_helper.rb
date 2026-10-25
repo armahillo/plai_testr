@@ -2,9 +2,11 @@ require 'fileutils'
 require 'tmpdir'
 
 require 'plai_testr'
+require 'plai_testr/rspec'
 
 PlaiTestr.load_config(File.expand_path('../config/plai_testr.rb', __dir__))
 PlaiTestr.games_dir = File.expand_path('../games', __dir__)
+PlaiTestr::Guide.link
 PlaiTestr.names.each { |name| PlaiTestr.load(name) }
 
 RSpec.configure do |config|

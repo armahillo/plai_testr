@@ -2,6 +2,8 @@ module PlaiTestr
   module Session
     class Runner
       RECENT_EVENTS = 8
+      DEBRIEF_LOG   = 300
+      MAX_PLAN_CHANGES = 15
       MODES         = %w[llm hybrid bot].freeze
       MOVE_KEYS     = %i[label public log action].freeze
 
@@ -23,6 +25,22 @@ module PlaiTestr
         runner = new(game: game, players: checkpoint.dig('game_state', 'players'), models: models, seed: data['seed'],
                      mode: data['mode'], session_id: session_id, out: out, verbose: verbose)
         runner.send(:restore, checkpoint)
+        runner
+      end
+
+      def self.redebrief(game, session_id, models: {}, out: $stdout, verbose: false)
+        checkpoint = Manager.new(session_id: session_id, persist: false).load_checkpoint
+        raise SessionError, "Session #{session_id} is not complete (#{checkpoint['status']}); finish it with: resume #{session_id}" unless checkpoint['status'] == 'completed'
+
+        data   = checkpoint.dig('game_state', 'data')
+        runner = new(game: game, players: checkpoint.dig('game_state', 'players'), seed: data['seed'], mode: data['mode'], session_id: session_id,
+                     models: { player: data['player_model'], debrief: models[:debrief] || data['player_model'], debrief_think: models[:debrief_think] },
+                     out: out, verbose: verbose)
+        runner.send(:restore, checkpoint)
+        unless checkpoint['fingerprint'] == game.fingerprint
+          runner.send(:warning, "#{game.name} has changed since session #{session_id} was played (data, code or gem version); " \
+                                'the debrief reads the current rules text')
+        end
         runner
       end
 
@@ -129,7 +147,7 @@ module PlaiTestr
 
       def data = @game_state.data
 
-      def log(text, to: nil, turn: decision)
+      def log(text, to: nil, turn: log_turn)
         player, decider = @acting
         tag = decider unless decider == 'LLM'
         event_log.add(text, turn: turn, to: to, actor: player, tag: tag)
@@ -193,9 +211,10 @@ module PlaiTestr
         data['personas'].values.count(key) > 1 ? "#{persona_name(player_name)} (#{player_name})" : persona_name(player_name)
       end
 
-      # Rules text for the menu system prompt. Override to scope rules to the current phase.
+      # Rules text for the menu system prompt: the game's data/rules.md, else its description.
+      # Override to scope rules to the current step or to append generated text (a card list).
       def rules_text_for(_player_name)
-        @rules.dig('game', 'description').to_s
+        @rules_text ||= File.exist?(@game.rules_text) ? File.read(@game.rules_text) : @rules.dig('game', 'description').to_s
       end
 
       # What the player is allowed to see, as text. Override with a readable view.
@@ -214,10 +233,22 @@ module PlaiTestr
         []
       end
 
-      # What a player sees while answering the debrief; defaults to their normal view.
+      # What a player reads after the debrief summary: the result, their final view and the
+      # log entries they could see. Override for a richer final position.
       def debrief_view_for(player_name)
-        view_text_for(player_name)
+        entries = event_log.visible_to(player_name).last(DEBRIEF_LOG)
+        [
+          "The game is over: #{result_text(player_name)}.",
+          view_text_for(player_name),
+          ("GAME LOG ([#{log_turn_name}] event):\n#{entries.map { |e| "- [#{e['turn']}] #{'(private) ' if e['to']}#{e['text']}" }.join("\n")}" if entries.any?)
+        ].compact.join("\n\n")
       end
+
+      # The number stamped on each log entry, shown in recent events and the debrief log.
+      # Defaults to the decision number; games with rounds return the round.
+      def log_turn = decision
+
+      def log_turn_name = 'decision'
 
       def report_sections
         []
@@ -241,11 +272,66 @@ module PlaiTestr
         {}
       end
 
+      def debrief_facts(_player_name)
+        botrun_stats
+      end
+
+      def debrief_summary(player_name)
+        facts = debrief_facts(player_name)
+        facts = facts.to_yaml.delete_prefix("---\n") if facts.is_a?(Hash)
+        plans = plan_changes(player_name)
+
+        [
+          "OUTCOME:\n#{outcome_text(player_name)}",
+          ("GAME FACTS (counted by the game engine):\n#{facts}" unless facts.to_s.strip.empty? || facts.strip == '{}'),
+          "YOUR DECISIONS:\n#{decisions_text(player_name)}",
+          ("YOUR PLAN AS IT CHANGED (decision · step: plan):\n#{plans.join("\n")}" if plans.any?)
+        ].compact.join("\n\n")
+      end
+
+      def debrief!
+        data['debrief_history'] = [*data['debrief_history'], data.slice('debrief', 'debrief_model', 'debrief_think')] if data['debrief']
+        data.delete('debrief')
+        fit_settings_to_model
+        run_debrief
+        save_checkpoint('completed')
+        @report_path = generate_report
+      end
+
       def recent_events_for(player_name)
-        event_log.recent_for(player_name, RECENT_EVENTS)
+        event_log.recent_for(player_name, @game.recent_events || RECENT_EVENTS)
       end
 
       private
+
+      # --- Helpers for games -----------------------------------------------------------
+
+      def players = @game_state.players
+
+      def pstate(player_name) = @game_state.player_state(player_name)
+
+      def whose(player_name, viewer) = player_name == viewer ? 'You' : player_name
+
+      # Counts something per player in data['tally'] (checkpointed), for reports and debrief facts.
+      def tally(player_name, key, amount = 1)
+        counts = ((data['tally'] ||= {})[player_name] ||= {})
+        counts[key] = counts.fetch(key, 0) + amount
+      end
+
+      # The one player with the top score, or nil on a tie.
+      def sole_leader(scores = @game_state.scores)
+        top = scores.values.max
+        scores.key(top) if scores.values.count(top) == 1
+      end
+
+      def result_text(player_name)
+        status = @game_state.status
+        winner = status['winner']
+        reason = status['end_reason'].to_s.tr('_', ' ')
+        scores = @game_state.scores.map { |p, score| "#{whose(p, player_name)} #{score}" }.join(', ')
+
+        "#{winner ? "#{winner == player_name ? 'you won' : "#{winner} won"}" : 'no winner'} (#{reason}). Final scores: #{scores}"
+      end
 
       # --- Turns -----------------------------------------------------------------------
 
@@ -433,23 +519,54 @@ module PlaiTestr
 
       # Stored in data['debrief'] so a resumed session does not ask a player twice.
       def run_debrief
+        data.merge!('debrief_model' => debrief_model, 'debrief_think' => @models[:debrief_think] == true)
         @game_state.players.each do |player_name|
           questions = debrief_questions(player_name)
           next if questions.empty? || data.dig('debrief', player_name)
 
           out.puts "Debrief — #{display_name(player_name)}"
           answers = waiting_on_model do
-            @agents[player_name].debrief(rules_text: rules_text_for(player_name), view_text: debrief_view_for(player_name),
-                                         questions: questions, persona: persona_for(player_name))
+            debrief_agent(player_name).debrief(rules_text: rules_text_for(player_name), view_text: debrief_view_for(player_name),
+                                               summary: debrief_summary(player_name), questions: questions,
+                                               persona: persona_for(player_name), think: @models[:debrief_think] == true)
           end
           data['debrief'] = (data['debrief'] || {}).merge(player_name => answers)
-          save_checkpoint('in_progress')
+          save_checkpoint(@status || 'in_progress')
         end
+      end
+
+      def debrief_model = @models[:debrief] || @models[:player]
+
+      def debrief_agent(player_name)
+        return @agents[player_name] if debrief_model == @models[:player]
+
+        Agents::PlayerAgent.new(name: player_name, model: debrief_model, client: @client, game_name: @rules.dig('game', 'name'), settings: @settings)
+      end
+
+      def outcome_text(player_name) = "#{result_text(player_name).sub(/\A./, &:upcase)}. #{@turn_log.length} decisions in all."
+
+      def decisions_text(player_name)
+        mine    = @turn_log.select { |t| t['player'] == player_name }
+        model   = mine.select { |t| t['decider'] == 'LLM' }
+        obvious = model.select { |t| t['bot_obvious'] }
+        lines   = ["#{mine.length} decisions: #{model.length} by you, #{mine.count { |t| t['decider'] == 'BOT' }} by bot rules, " \
+                   "#{mine.count { |t| t['auto'] }} with only one option."]
+        lines << "Where one option was clearly best, you chose it #{obvious.count { |t| t['bot_choice'] == t['choice'] }} of #{obvious.length} times." if obvious.any?
+        lines << "#{mine.count { |t| t['fallback'] }} of your replies were unusable and replaced." if mine.any? { |t| t['fallback'] }
+        lines.join("\n")
+      end
+
+      def plan_changes(player_name)
+        changes = @turn_log.select { |t| t['player'] == player_name && t['plan'].to_s.strip != '' }
+                           .chunk_while { |a, b| a['plan'] == b['plan'] }.map(&:first)
+        changes = changes.each_slice((changes.length / MAX_PLAN_CHANGES.to_f).ceil).map(&:first) if changes.length > MAX_PLAN_CHANGES
+        changes.map { |t| "- #{t['turn']}#{" · #{t['phase']}" if t['phase']}: #{t['plan']}" }
       end
 
       def warning(text)
         warn "  [warning] #{text}" if @echo_warnings && !@warnings.include?(text)
         @warnings << text
+        (data['warnings'] ||= []) << text
       end
 
       # --- Models ------------------------------------------------------------------------
@@ -462,7 +579,7 @@ module PlaiTestr
       end
 
       def fit_settings_to_model
-        model_max = @models.values_at(:player, :referee).compact.uniq.filter_map { |model| @client.context_length(model) }.min or return
+        model_max = @models.values_at(:player, :referee, :debrief).compact.uniq.filter_map { |model| @client.context_length(model) }.min or return
         @settings = resolve_settings(model_max: model_max)
         build_agents
       end
@@ -485,9 +602,11 @@ module PlaiTestr
       # --- Persistence and reporting ---------------------------------------------------
 
       def restore(checkpoint)
-        @game_state = @game.game_state_class.from_h(checkpoint['game_state'])
-        @turn_log   = checkpoint['turn_log']
-        @resumed    = true
+        @game_state  = @game.game_state_class.from_h(checkpoint['game_state'])
+        @turn_log    = checkpoint['turn_log']
+        @warnings    = data.fetch('warnings', []).dup
+        @fingerprint = checkpoint['fingerprint']
+        @resumed     = true
       end
 
       def finish

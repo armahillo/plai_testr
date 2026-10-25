@@ -52,6 +52,15 @@ RSpec.describe PlaiTestr::Game do
     expect { PlaiTestr.load('nim').check! }.to raise_error(PlaiTestr::RulesError, /cards\.yml/)
   end
 
+  it 'warns when a game gives its debrief no facts' do
+    bare  = build_game(Class.new(PlaiTestr::Session::Runner), name: 'bare')
+    facts = build_game(Class.new(PlaiTestr::Session::Runner) { def debrief_facts(_p) = { 'moves' => 1 } }, name: 'facts')
+    stats = build_game(Class.new(PlaiTestr::Session::Runner) { def botrun_stats = { 'moves' => 1 } }, name: 'stats')
+
+    expect(bare.check!).to include(/debriefs get no game facts/)
+    expect(facts.check! + stats.check!).to be_empty
+  end
+
   it 'explains which games exist when asked for an unknown one' do
     expect { PlaiTestr.load('nope') }.to raise_error(PlaiTestr::UsageError, /Available: nim/)
   end

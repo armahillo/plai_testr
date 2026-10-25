@@ -8,4 +8,5 @@ PlaiTestr.register('hearts',
                     runner_class:        Hearts::Session::Runner,
                     game_state_class:    Hearts::State::GameState,
                     botrun_report_class: Hearts::Reporter::BotrunReport,
-                    players:             ['Player 1', 'Player 2', 'Player 3', 'Player 4'])
+                    players:             ['Player 1', 'Player 2', 'Player 3', 'Player 4'],
+                    recent_events:       12)

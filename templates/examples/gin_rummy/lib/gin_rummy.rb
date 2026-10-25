@@ -6,4 +6,5 @@ require_relative 'gin_rummy/session/runner'
 
 PlaiTestr.register('gin_rummy',
                    runner_class:     GinRummy::Session::Runner,
-                   game_state_class: GinRummy::State::GameState)
+                   game_state_class: GinRummy::State::GameState,
+                   recent_events:    10)

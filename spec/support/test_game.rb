@@ -9,6 +9,6 @@ module TestGame
 
     PlaiTestr::Game.new(name: name, runner_class: runner_class, game_state_class: PlaiTestr::State::GameState, players: ['Alice', 'Bob'],
                         comparison_class: PlaiTestr::Reporter::ModelComparison, botrun_report_class: PlaiTestr::Reporter::BotrunReport,
-                        max_decisions: nil, model_settings: {}, **options)
+                        max_decisions: nil, model_settings: {}, recent_events: nil, **options)
   end
 end

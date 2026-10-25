@@ -9,10 +9,7 @@ module GinRummy
       private
 
       def data_for(observer)
-        @data.except('stock', 'log').merge(
-          'stock_size' => stock.length,
-          'log'        => PlaiTestr::EventLog.new(@data.fetch('log', [])).visible_to(observer)
-        )
+        super.except('stock').merge('stock_size' => stock.length)
       end
     end
   end

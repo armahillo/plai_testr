@@ -16,7 +16,7 @@ module PlaiTestr
       def build
         report = [header, result, reliability, bot_agreement, speed, warnings, *@sections, debrief, turn_log_section].compact.join("\n\n---\n\n")
         path   = File.join(PlaiTestr.reports_dir, "#{@session_id}.md")
-        File.write(path, report)
+        File.write(path, Tables.align(report))
         path
       end
 
@@ -130,7 +130,10 @@ module PlaiTestr
           "**#{name(player)}**\n\n#{list.map { |a| "- *#{a['question']}*\n  #{a['answer'].to_s.empty? ? '_(no answer)_' : a['answer']}" }.join("\n")}"
         end
 
-        "## Debrief\n\n#{players.join("\n\n")}"
+        model = @game_state.data['debrief_model']
+        about = model ? "_Answered by #{model}#{' (thinking)' if @game_state.data['debrief_think']}._\n\n" : ''
+
+        "## Debrief\n\n#{about}#{players.join("\n\n")}"
       end
 
       def turn_line(turn)

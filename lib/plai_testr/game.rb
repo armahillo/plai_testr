@@ -1,8 +1,10 @@
 module PlaiTestr
-  Game = Data.define(:name, :runner_class, :game_state_class, :players, :comparison_class, :botrun_report_class, :max_decisions, :model_settings) do
+  Game = Data.define(:name, :runner_class, :game_state_class, :players, :comparison_class, :botrun_report_class, :max_decisions, :model_settings,
+                     :recent_events) do
     def root         = File.join(PlaiTestr.games_dir, name)
     def data_dir     = File.join(root, 'data')
     def rules_file   = File.join(data_dir, 'rules.json')
+    def rules_text   = File.join(data_dir, 'rules.md')
     def sessions_dir = File.join(root, 'sessions')
     def reports_dir  = File.join(root, 'reports')
     def rules        = RulesLoader.load(rules_file)
@@ -15,7 +17,14 @@ module PlaiTestr
         raise RulesError, "#{File.join(data_dir, file)}: #{e.message}"
       end
       rules
-      personas.lint
+      personas.lint + debrief_lint
+    end
+
+    def debrief_lint
+      return [] unless runner_class.is_a?(Class) && runner_class < Session::Runner
+
+      own = %i[debrief_facts botrun_stats].any? { |hook| runner_class.instance_method(hook).owner != Session::Runner }
+      own ? [] : ["#{runner_class}: debriefs get no game facts; define debrief_facts (or botrun_stats) so players answer from counted facts"]
     end
 
     def fingerprint
@@ -28,8 +37,9 @@ module PlaiTestr
   end
 
   def self.register(name, runner_class:, game_state_class:, players: ['Player 1', 'Player 2'], comparison_class: Reporter::ModelComparison,
-                    botrun_report_class: Reporter::BotrunReport, max_decisions: nil, model_settings: {})
-    registry[name] = Game.new(name:, runner_class:, game_state_class:, players:, comparison_class:, botrun_report_class:, max_decisions:, model_settings:)
+                    botrun_report_class: Reporter::BotrunReport, max_decisions: nil, model_settings: {}, recent_events: nil)
+    registry[name] = Game.new(name:, runner_class:, game_state_class:, players:, comparison_class:, botrun_report_class:, max_decisions:, model_settings:,
+                              recent_events:)
   end
 
   def self.load(name)

@@ -21,23 +21,31 @@ bundle exec plai_testr hearts botrun --games 100   # bots only, no model: a repo
 bundle exec plai_testr gin_rummy play              # one model game (pulls qwen3:8b if missing)
 ```
 
-Reports land in `games/<game>/reports/`. Add your own game with `bundle exec plai_testr generate game my_game`, then fill in the hooks below. The generated app's `AGENTS.md` walks an AI coding assistant through building a harness, so you can have your own agent do it.
+Reports land in `games/<game>/reports/`. Add your own game with `bundle exec plai_testr generate game my_game`, then fill in the hooks below. The agent guide, [`docs/AGENTS.md`](docs/AGENTS.md), walks an AI coding assistant through building a harness, so you can have your own agent do it. Apps don't copy it: `.plai_testr/gem` in each app links to the installed gem (refreshed by `new`, every command and the app's spec_helper; git-ignored), the app's `CLAUDE.md` imports `@.plai_testr/gem/docs/AGENTS.md`, and the app's own `AGENTS.md` keeps only app-specific notes. Upgrading the gem upgrades the guide.
 
 ## Commands
 
 ```
 plai_testr <game> play      [--seed N] [--model M] [--think] [--mode llm|hybrid|bot] [--players N] [--personas A,B] [--referee M]
+                            [--debrief-model M] [--debrief-think]
 plai_testr <game> botrun    [--games N | --seeds 1,2,3] [--players N] [--personas all|A,B]
 plai_testr <game> resume    <session_id>
+plai_testr <game> debrief   <session_id> [--model M] [--think]
 plai_testr <game> preflight
 plai_testr <game> compare   [--since ID]
 plai_testr <game> list
 plai_testr new <dir>
 plai_testr generate game <name>
+plai_testr games
+plai_testr help [<command>]
+plai_testr --version
 ```
+
+- Every command takes `--help` (`plai_testr hearts botrun --help`, or `plai_testr help botrun`) to list its options and what they do. A command refuses options it doesn't take.
 
 - `play` runs one game. Without `--seed` it picks one from 1–100 and prints it. Before playing, preflight checks Ollama, pulls missing models, warms them up, measures the first prompt against the context size, and plays 5 bot games to catch menu bugs. `--skip-preflight` skips all of that.
 - `--mode hybrid` lets the bot play moves it marks *obvious*; `--mode bot` uses no model.
+- After a model game each player answers the game's debrief questions. `--debrief-model` and `--debrief-think` give the debrief its own model and thinking. `debrief <session_id>` asks a completed session's players again (another model, thinking, or a changed `debrief_facts`) and rebuilds its report; earlier answers stay in the checkpoint under `debrief_history`. See [Debrief](#debrief).
 - `botrun` plays many bot-only games in memory and writes one report: endings, wins by persona and seat with 95% ranges, game length, bot rules used, warnings and crashes.
 - `--quiet` shows a progress line and the result; `--verbose` adds raw model output (`play`) or every game (`botrun`).
 - Ctrl+C (or SIGTERM) saves and stops after the current move; a botrun finishes its game and reports. A second Ctrl+C quits at once.
@@ -53,12 +61,19 @@ games/<name>/
   lib/<name>/bot.rb         Bot rules (bot_choice), included in the runner
   lib/<name>/session/       Runner (rules engine)
   lib/<name>/state/         GameState / PlayerState subclasses
-  data/rules.json           Name, version, player count, card deck, numbers the engine uses
+  data/rules.json           Name, version, player count, numbers the engine uses
+  data/components/          Card lists and other components, one file each (.csv, .yml or .json)
   data/rules.md             Rules text the model players read
   data/personas.yml         Optional: strategy and play styles for model players
   data/bots.yml             Optional: parameters the bot rules read
   spec/
 ```
+
+### Components
+
+Each file in `data/components/` is one component, named after the file: `PlaiTestr::Deck.build(@rules, component: 'cards')` returns `data/components/cards.csv` (or `.yml`, `.json`) as a list of cards, each with its own `uid` (without `component:`, the first deck). A file is a list of records: a CSV with a header row (numbers become numbers; empty cells are left out), or a YAML or JSON list of hashes. A `copies` field makes that many copies. Small decks can stay inline under `components` in `rules.json` instead (`games/gin_rummy` does this; `games/hearts` uses `cards.csv`).
+
+PlAI Testr reads only this format. Converting a designer's own files (spreadsheets, YAML with metadata, exports from card tools) is the game's job: copy or convert them into `data/components/`, with a small import script in the game folder if the source keeps changing.
 
 ### Hooks
 
@@ -73,17 +88,23 @@ A game subclasses `PlaiTestr::Session::Runner`. These hooks are its public API (
 | `pick_range(player)` | | `[min, max]` to pick several options at once |
 | `game_over?` | | Default: `status['game_over']` |
 | `turn_phase(player)` | | Short step label for the console and report |
-| `rules_text_for`, `view_text_for`, `prompt_note_for` | | Prompt text: rules, the player's view, a one-off note |
-| `recent_events_for(player)` | | Recent events from the event log (default: the last 8 this player may see) |
+| `view_text_for(player)` | expected | The player's view of the game, as text |
+| `rules_text_for(player)` | | Rules text (default: the game's `data/rules.md`; call `super` to extend it) |
+| `prompt_note_for(player)` | | A one-off note for this prompt |
+| `recent_events_for(player)` | | Recent events from the event log (default: the last 8 this player may see; `recent_events:` in `register`) |
+| `log_turn`, `log_turn_name` | | The number stamped on log entries and its name (default: the decision number) |
 | `persona_for(player)` | | Strategy text for the system prompt (default: built from `personas.yml`) |
 | `display_name(player)` | | Name in the console and reports (default: the persona's key, title-cased, else the player id) |
 | `bot_choice(player, moves, pick: nil)` | | Bot rules: `nil` or `{ 'choice' => n, 'rule' => name, 'obvious' => bool }` (`'choices'` on pick turns) |
 | `think_about?(player)` | | With `--think`: whether this turn gets thinking (default: every turn) |
-| `debrief_questions`, `debrief_view_for` | | End-of-game feedback questions |
+| `debrief_questions` | | End-of-game feedback questions |
+| `debrief_facts(player)` | expected | Engine-counted facts for the debrief, as a Hash (default: `botrun_stats`; see [Debrief](#debrief)) |
+| `debrief_view_for(player)` | | The final position the debrief reads (default: the result, final scores, `view_text_for` and the player's visible log) |
+| `debrief_summary(player)` | | Built by the gem, not overridden: the summary that opens each debrief prompt |
 | `report_sections`, `report_debrief?` | | Extra report sections; false to render the debrief yourself |
 | `botrun_stats` | | Game-specific numbers for one botrun game |
 
-Helpers for hooks: `option`, `menu(player)` (the menu as the runner sees it), `data`, `log(text, to: nil, turn: decision)`, `event_log`, `persona(player)`, `persona_name(player)`, `bot_strategy_for(player)`, `@rng`, `@rules`, `@game_state`, `out`. Specs drive a runner with `setup`, `play_turn`, `play_out` and the hooks above.
+Helpers for hooks: `option`, `menu(player)` (the menu as the runner sees it), `data`, `log(text, to: nil)`, `event_log`, `players`, `pstate(player)`, `whose(player, viewer)`, `tally(player, key, amount = 1)` (counts in `data['tally']`), `sole_leader(scores)`, `persona(player)`, `persona_name(player)`, `bot_strategy_for(player)`, `@rng`, `@rules`, `@game_state`, `out`. Specs drive a runner with `setup`, `play_turn`, `play_out` and the hooks above.
 
 ### Moves
 
@@ -108,7 +129,7 @@ end
 
 - `status` belongs to the runner: set `game_over`, `winner` and `end_reason` when the game ends, with `@game_state.apply_changes('status' => {...})`.
 - `data` is the game's own state, as plain JSON-safe values so checkpoints work without extra code.
-- Subclass `GameState` to name your keys (`def step = @data['step']`) and to hide information per player with `data_for(observer)`; subclass `PlayerState` and override `serialize_for` / `public_data` to choose what opponents see. The examples show both.
+- Subclass `GameState` to name your keys (`def step = @data['step']`) and to hide information per player with `data_for(observer)` (the default already filters the event log per player; extend it with `super.except('deck')`); subclass `PlayerState` and override `serialize_for` / `public_data` to choose what opponents see. The examples show both.
 
 ### Personas and bots
 
@@ -119,6 +140,35 @@ end
 - Use `@rng` for all randomness. It is reset for each decision from the seed and the decision number, so the same seed and the same choices always give the same game, interrupted or not.
 - When the model never gives a valid answer, the bot's choice is played instead (or a random legal move from a separate generator), and the turn is flagged.
 - Every game stops at a decision limit (`end_reason: 'decision_limit_reached'`, no winner) so a buggy game cannot run forever. Set `max_decisions:` in `PlaiTestr.register`; otherwise the app backstop applies.
+
+### Specs
+
+`require 'plai_testr/rspec'` (the generated spec_helper does) provides the checks every game runs:
+
+```ruby
+RSpec.describe MyGame::Session::Runner do
+  it_behaves_like 'a PlAI Testr game', 'my_game'   # seeds: [1, 2, 3], pending: 'reason'
+end
+```
+
+At every player count in `rules.json`: bot games reach an ending; every turn and debrief prompt builds; state survives a JSON round trip; resuming from a mid-game checkpoint gives the same result; no player sees another's hand. New checks arrive with gem upgrades.
+
+### Debrief
+
+After a model game, each player answers `debrief_questions`. The prompt opens with a summary the gem builds (`debrief_summary`):
+
+- **Outcome**: winner, end reason, final scores
+- **Game facts**: `debrief_facts(player)`, shown as YAML
+- **Your decisions**: how many the model made, how often it chose the obvious move, fallbacks
+- **Your plan as it changed**: the player's own `plan` each time it changed, with the decision and step
+
+then `debrief_view_for(player)`. The model is told to treat the summary as correct and to cite the round of any event it mentions. Small models invent answers when they have to recall a long game from its log, so the facts carry the debrief:
+
+- Return the numbers the questions depend on, per player: points by source, counts of key actions, races or majorities and who won them, who ended the game and how.
+- Compute them only from `data` and player state. `debrief <session_id>` rebuilds them from the checkpoint later.
+- Ask questions the facts and the player's own plans can answer.
+
+`check!` (run by every game command) warns when a game defines neither `debrief_facts` nor `botrun_stats`. Preflight builds every player's debrief after each lint game, so a broken hook stops before a model game starts.
 
 ### Nested decisions and rulings
 
@@ -158,7 +208,7 @@ Values outside the hard limits are clamped with a warning: context sizes between
 - `sessions/<id>/state.json`: the checkpoint, replaced atomically after every decision
 - `sessions/<id>/transcript.jsonl`: one JSON object per decision, with the model's reasoning. After a crash the last line may be cut off; skip lines that do not parse.
 - `sessions/<id>/think.log`: every model reply with Ollama's timings
-- `reports/<id>.md`: the session report
+- `reports/<id>.md`: the session report; `debrief <id>` rebuilds it
 
 `resume` continues an interrupted session exactly, or refuses: if the game's data, code or the gem version changed since the session started, start a new one with `play`.
 

@@ -1,3 +1,4 @@
 .bundle/
+.plai_testr/
 games/*/sessions/
 games/*/reports/

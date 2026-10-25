@@ -1,11 +1,9 @@
 module <%= module_name %>
   module State
+    # Name your data keys with readers (def step = @data['step']). Each player's view already
+    # shows only the log entries meant for them; hide more by overriding data_for:
+    #   def data_for(observer) = super.except('deck').merge('deck_size' => @data['deck'].length)
     class GameState < PlaiTestr::State::GameState
-      private
-
-      def data_for(observer)
-        @data.except('log').merge('log' => PlaiTestr::EventLog.new(@data.fetch('log', [])).visible_to(observer))
-      end
     end
   end
 end

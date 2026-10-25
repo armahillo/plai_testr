@@ -77,14 +77,15 @@ module PlaiTestr
       #
       # Returns [{ 'question' => String, 'answer' => String }] in question order. A missing or
       # unparseable answer becomes an empty string; the debrief never raises on bad output.
-      def debrief(rules_text:, view_text:, questions:, persona: nil)
+      def debrief(rules_text:, view_text:, questions:, persona: nil, summary: nil, think: false)
         keys     = questions.each_index.map { |i| "q#{i + 1}" }
         schema   = { 'type' => 'object', 'properties' => keys.to_h { |k| [k, { 'type' => 'string' }] }, 'required' => keys }
         messages = [
           { role: 'system', content: debrief_system_prompt(rules_text, persona) },
-          { role: 'user',   content: debrief_prompt(view_text, questions, keys) }
+          { role: 'user',   content: debrief_prompt(view_text, summary, questions, keys) }
         ]
-        options  = { temperature: @settings[:temperature], think: false, num_ctx: @settings[:long_context_size], num_predict: @settings[:debrief_budget] }
+        budget   = think ? @settings[:think_budget] + @settings[:debrief_budget] : @settings[:debrief_budget]
+        options  = { temperature: @settings[:temperature], think: think, num_ctx: @settings[:long_context_size], num_predict: budget }
 
         parsed = {}
         (MAX_PARSE_RETRIES + 1).times do
@@ -143,20 +144,23 @@ module PlaiTestr
           #{"\nTHE STRATEGY YOU PLAYED: #{persona}\n" if persona}
 
           HOW TO ANSWER:
-          - Be specific: name actual components, rules, and decisions from your game.
-          - Stick to the facts under YOUR FINAL POSITION. Describe a card by the text given there, not from memory,
-            and check the log before saying something did or did not happen.
-          - 1-3 sentences per answer. Criticism is welcome; the designer wants to find problems.
-          - If nothing applies, answer "nothing" rather than inventing a problem.
+          - Answer from GAME SUMMARY first: its facts were counted by the game engine and are correct.
+            Use YOUR FINAL POSITION and its log for detail. Never contradict the summary.
+          - Only say a player did something if the summary or the log shows it. When you mention an event, name its round or decision.
+          - Speak from your own experience: what you planned (YOUR PLAN AS IT CHANGED), what happened, and why.
+          - Be specific: name actual components, rules, and decisions. 1-3 sentences per answer.
+            Criticism is welcome; the designer wants to find problems.
+          - If the facts do not answer a question, say "not in the facts" or "nothing" rather than guessing.
 
           Reply with JSON only.
         PROMPT
       end
 
-      def debrief_prompt(view_text, questions, keys)
+      def debrief_prompt(view_text, summary, questions, keys)
         list = questions.zip(keys).map { |q, k| "#{k}: #{q}" }.join("\n")
 
         <<~PROMPT
+          #{"GAME SUMMARY:\n#{summary}\n" if summary}
           YOUR FINAL POSITION:
           #{view_text}
 

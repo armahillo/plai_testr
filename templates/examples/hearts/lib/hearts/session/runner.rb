@@ -3,13 +3,11 @@ module Hearts
     class Runner < PlaiTestr::Session::Runner
       include Bot
 
-      RULES_PATH = File.expand_path('../../../data/rules.md', __dir__)
-      RECENT_LOG = 12
-
       DEBRIEF_QUESTIONS = [
-        'Which decision in this game mattered most, and why?',
-        'Which rule or restriction was unclear or confusing?',
-        'Which choices felt automatic (the choice did not matter)?'
+        'Which of your passes or plays mattered most, and why? Name the hand.',
+        'When did you take points you meant to avoid? What happened?',
+        'Which rule or restriction was unclear when you had to follow it? Name the situation.',
+        'Did your strategy work? Use GAME FACTS to say what helped it and what got in the way.'
       ].freeze
 
       def setup
@@ -40,8 +38,6 @@ module Hearts
         in { play: { value: uid } }  then play(player, uid)
         end
       end
-
-      def rules_text_for(_player) = @rules_text ||= File.read(RULES_PATH)
 
       def view_text_for(player)
         [
@@ -74,7 +70,16 @@ module Hearts
 
       def botrun_stats = { 'hands' => data['hand'], 'taken' => totals }
 
-      def recent_events_for(player) = event_log.recent_for(player, RECENT_LOG)
+      def debrief_facts(_player)
+        {
+          'how_it_ended' => "#{@game_state.status['end_reason'].to_s.tr('_', ' ')} after #{data['hand']} hands, when " \
+                            "#{players.select { |p| pstate(p).score >= limit }.join(' and ')} reached #{limit} points (lower scores are better)",
+          'players' => players.to_h do |p|
+            [p, { 'final_score' => pstate(p).score, 'hearts_taken' => totals['hearts'][p], 'queen_of_spades_taken' => totals['queen'][p],
+                  'moons_shot' => totals['moons'][p] }]
+          end
+        }
+      end
 
       def debrief_questions(_player) = DEBRIEF_QUESTIONS
 
@@ -236,8 +241,6 @@ module Hearts
 
       def per_player(viewer) = players.map { |p| "#{whose(p, viewer)} #{yield p}" }.join(', ')
 
-      def whose(player, viewer) = player == viewer ? 'You' : player
-
       def points_in(cards) = cards.sum { |c| Hearts.points(c) }
       def list(cards)      = cards.map { |c| c['name'] }.join(', ')
       def pts(points)      = points == 1 ? '1 pt' : "#{points} pts"
@@ -247,8 +250,6 @@ module Hearts
       def trick            = @game_state.trick
       def taken            = @game_state.taken
       def totals           = data['taken_total']
-      def players          = @game_state.players
-      def pstate(player)   = @game_state.player_state(player)
       def hand(player)     = pstate(player).hand
     end
   end
